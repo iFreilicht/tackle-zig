@@ -19,11 +19,12 @@ const Position = enum { start, end, other };
 const EvenOdd = enum { even, odd };
 
 const margin = 4;
+const margin_fmt = "{:3} ";
 const row_height = 2;
 const col_width = 4;
 const last_i = board_size * row_height + 1;
 const last_j = board_size * col_width + 1;
-const buff_size = (last_j + margin) * 4;
+const buff_size = (last_i + 1) * (last_j + margin) * 4;
 fn position(i: usize, last: comptime_int) Position {
     return switch (i) {
         0 => .start,
@@ -35,13 +36,13 @@ fn iszero(i: usize) bool {
     return i == 0;
 }
 
-pub fn board() !void {
+pub fn board() ![buff_size]u8 {
     var row_number: u8 = board_size;
-    for (0..last_i) |i| {
-        var buffer = [1]u8{0} ** buff_size;
-        var fbs = std.io.fixedBufferStream(&buffer);
-        var writer = fbs.writer();
+    var buffer = [1]u8{0} ** buff_size;
+    var fbs = std.io.fixedBufferStream(&buffer);
+    var writer = fbs.writer();
 
+    for (0..last_i) |i| {
         const i_pos = position(i, last_i);
         const i_on_line = i % row_height == 0;
 
@@ -49,7 +50,7 @@ pub fn board() !void {
         if (i_on_line) {
             _ = try writer.write(" " ** margin);
         } else {
-            _ = try writer.print("{:3} ", .{row_number});
+            _ = try writer.print(margin_fmt, .{row_number});
             row_number -= 1;
         }
 
@@ -80,13 +81,9 @@ pub fn board() !void {
         }
 
         _ = try writer.write("\n");
-        std.debug.print("{s}", .{buffer});
     }
 
     var col_number: u8 = 0;
-    var buffer = [1]u8{0} ** buff_size;
-    var fbs = std.io.fixedBufferStream(&buffer);
-    var writer = fbs.writer();
     for (0..margin + last_j) |j| {
         if (j > margin and (j - margin + (col_width / 2)) % col_width == 0) {
             _ = try writer.writeByte(column_letters[col_number]);
@@ -95,5 +92,39 @@ pub fn board() !void {
             _ = try writer.writeByte(' ');
         }
     }
-    std.debug.print("{s}\n", .{buffer});
+
+    _ = try writer.write("\n");
+    return buffer;
+}
+
+test "empty board is drawn correctly" {
+    const result = try board();
+
+    const expected =
+        \\    ╭───┬───┬───┬───┬───┬───┬───┬───┬───┬───╮
+        \\ 10 │   │   │   │   │   │   │   │   │   │   │
+        \\    ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤
+        \\  9 │   │   │   │   │   │   │   │   │   │   │
+        \\    ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤
+        \\  8 │   │   │   │   │   │   │   │   │   │   │
+        \\    ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤
+        \\  7 │   │   │   │   │   │   │   │   │   │   │
+        \\    ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤
+        \\  6 │   │   │   │   │   │   │   │   │   │   │
+        \\    ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤
+        \\  5 │   │   │   │   │   │   │   │   │   │   │
+        \\    ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤
+        \\  4 │   │   │   │   │   │   │   │   │   │   │
+        \\    ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤
+        \\  3 │   │   │   │   │   │   │   │   │   │   │
+        \\    ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤
+        \\  2 │   │   │   │   │   │   │   │   │   │   │
+        \\    ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤
+        \\  1 │   │   │   │   │   │   │   │   │   │   │
+        \\    ╰───┴───┴───┴───┴───┴───┴───┴───┴───┴───╯
+        \\      A   B   C   D   E   F   G   H   i   J  
+        \\
+    ;
+
+    try std.testing.expect(std.mem.startsWith(u8, &result, expected));
 }

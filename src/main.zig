@@ -2,7 +2,8 @@ const std = @import("std");
 const tackle_zig = @import("tackle.zig");
 
 pub fn main() !void {
-    try tackle_zig.board();
+    const board = try tackle_zig.board();
+    std.debug.print("{s}", .{board});
 }
 
 test "simple test" {

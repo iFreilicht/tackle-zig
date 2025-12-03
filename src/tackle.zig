@@ -1,7 +1,8 @@
 const std = @import("std");
-
-const board_size = 10;
-const column_letters = [board_size]u8{ 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'i', 'J' };
+const constants = @import("constants.zig");
+const board_size = constants.board_size;
+const max_job_size = constants.max_job_size;
+const column_letters = constants.column_letters;
 
 const corner_tl: []const u8 = "╭";
 const corner_bl: []const u8 = "╰";

@@ -3,7 +3,7 @@ const state = @import("state.zig");
 const constants = @import("constants.zig");
 const Player = state.Player;
 const column_letters = constants.column_letters;
-const max_turn_str_len = 24;
+const max_turn_str_len = 22;
 
 const CommentQuality = enum {
     very_good, // (!!)
@@ -28,7 +28,40 @@ const Corner = enum {
     top_left, // A10
     top_right, // J10
 };
-const DiagonalMove = struct { from: Corner, distance: u4 };
+const DiagonalMove = struct {
+    from: Corner,
+    distance: u4,
+
+    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
+        const start_x: u4 = switch (self.from) {
+            .bottom_left => 1,
+            .bottom_right => 10,
+            .top_left => 1,
+            .top_right => 10,
+        };
+        const start_y: u4 = switch (self.from) {
+            .bottom_left => 1,
+            .bottom_right => 1,
+            .top_left => 10,
+            .top_right => 10,
+        };
+        const end_x: u4 = switch (self.from) {
+            .bottom_left => start_x + self.distance,
+            .bottom_right => start_x - self.distance,
+            .top_left => start_x + self.distance,
+            .top_right => start_x - self.distance,
+        };
+        const end_y: u4 = switch (self.from) {
+            .bottom_left => start_y + self.distance,
+            .bottom_right => start_y + self.distance,
+            .top_left => start_y - self.distance,
+            .top_right => start_y - self.distance,
+        };
+        const start_x_str = column_letters[start_x - 1];
+        const end_e_x_str = column_letters[end_x - 1];
+        _ = try writer.print("{c}{}-{c}{}", .{ start_x_str, start_y, end_e_x_str, end_y });
+    }
+};
 
 const HorizontalMove = struct {
     from_x: u4,
@@ -38,6 +71,30 @@ const HorizontalMove = struct {
 
     fn is_block(self: @This()) bool {
         return self.block_height > 0;
+    }
+
+    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
+        const start_x = column_letters[self.from_x];
+        const end_x = column_letters[self.to_x];
+        const start_y: u4 = self.y + 1;
+        if (self.is_block()) {
+            const block_y = start_y + self.block_height;
+            _ = try writer.print("▢{c}{}{}-{c}{}{}", .{
+                start_x,
+                start_y,
+                block_y,
+                end_x,
+                start_y,
+                block_y,
+            });
+        } else {
+            _ = try writer.print("{c}{}-{c}{}", .{
+                start_x,
+                start_y,
+                end_x,
+                start_y,
+            });
+        }
     }
 };
 const VerticalMove = struct {
@@ -49,12 +106,44 @@ const VerticalMove = struct {
     fn is_block(self: @This()) bool {
         return self.block_width > 0;
     }
+
+    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
+        const start_x = column_letters[self.x];
+        const start_y: u4 = self.from_y + 1;
+        const end_y: u4 = self.to_y + 1;
+        if (self.is_block()) {
+            const block_x = column_letters[self.x + self.block_width];
+            _ = try writer.print("▢{c}{c}{}-{c}{c}{}", .{
+                start_x,
+                block_x,
+                start_y,
+                start_x,
+                block_x,
+                end_y,
+            });
+        } else {
+            _ = try writer.print("{c}{}-{c}{}", .{
+                start_x,
+                start_y,
+                start_x,
+                end_y,
+            });
+        }
+    }
 };
 
 const Move = union(enum) {
     diagonal: DiagonalMove,
     horizontal: HorizontalMove,
     vertical: VerticalMove,
+
+    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
+        _ = try switch (self) {
+            .diagonal => |d| d.format(writer),
+            .horizontal => |h| h.format(writer),
+            .vertical => |v| v.format(writer),
+        };
+    }
 };
 
 const Turn = struct {
@@ -63,126 +152,44 @@ const Turn = struct {
     special_action: ?SpecialAction = null,
     quality: ?CommentQuality = null,
     winning: ?CommentWinning = null,
+
+    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
+        // Write player color
+        _ = try writer.write(switch (self.by) {
+            .white => "w",
+            .black => "b",
+        });
+
+        // Write move
+        _ = try self.move.format(writer);
+
+        // Write comment for winning state
+        if (self.winning) |winning| {
+            _ = try writer.write(switch (winning) {
+                .job_in_one => "x",
+                .win => "xx",
+            });
+        }
+
+        // Write special action
+        if (self.special_action) |special_action| {
+            _ = try writer.write(switch (special_action) {
+                .gold_removed => "(>)",
+                .worm => "(w)",
+            });
+        }
+        // Write comment for quality
+        if (self.quality) |quality| {
+            _ = try writer.write(switch (quality) {
+                .very_good => "(!!)",
+                .good => "(!)",
+                .interesting => "(!?)",
+                .bad => "(?)",
+                .very_bad => "(??)",
+            });
+        }
+    }
 };
-
-fn format_turn(turn: Turn) ![max_turn_str_len]u8 {
-    var buffer = [1]u8{0} ** max_turn_str_len;
-    var fbs = std.io.fixedBufferStream(&buffer);
-    var writer = fbs.writer();
-
-    // Write player color
-    _ = try writer.write(switch (turn.by) {
-        .white => "w",
-        .black => "b",
-    });
-
-    // Write move
-    switch (turn.move) {
-        .diagonal => |d| {
-            const start_x: u4 = switch (d.from) {
-                .bottom_left => 1,
-                .bottom_right => 10,
-                .top_left => 1,
-                .top_right => 10,
-            };
-            const start_y: u4 = switch (d.from) {
-                .bottom_left => 1,
-                .bottom_right => 1,
-                .top_left => 10,
-                .top_right => 10,
-            };
-            const end_x: u4 = switch (d.from) {
-                .bottom_left => start_x + d.distance,
-                .bottom_right => start_x - d.distance,
-                .top_left => start_x + d.distance,
-                .top_right => start_x - d.distance,
-            };
-            const end_y: u4 = switch (d.from) {
-                .bottom_left => start_y + d.distance,
-                .bottom_right => start_y + d.distance,
-                .top_left => start_y - d.distance,
-                .top_right => start_y - d.distance,
-            };
-            const start_x_str = column_letters[start_x - 1];
-            const end_e_x_str = column_letters[end_x - 1];
-            _ = try writer.print("{c}{}-{c}{}", .{ start_x_str, start_y, end_e_x_str, end_y });
-        },
-        .horizontal => |h| {
-            const start_x = column_letters[h.from_x];
-            const end_x = column_letters[h.to_x];
-            const start_y: u4 = h.y + 1;
-            if (h.is_block()) {
-                const block_y = start_y + h.block_height;
-                _ = try writer.print("▢{c}{}{}-{c}{}{}", .{
-                    start_x,
-                    start_y,
-                    block_y,
-                    end_x,
-                    start_y,
-                    block_y,
-                });
-            } else {
-                _ = try writer.print("{c}{}-{c}{}", .{
-                    start_x,
-                    start_y,
-                    end_x,
-                    start_y,
-                });
-            }
-        },
-        .vertical => |v| {
-            const start_x = column_letters[v.x];
-            const start_y: u4 = v.from_y + 1;
-            const end_y: u4 = v.to_y + 1;
-            if (v.is_block()) {
-                const block_x = column_letters[v.x + v.block_width];
-                _ = try writer.print("▢{c}{c}{}-{c}{c}{}", .{
-                    start_x,
-                    block_x,
-                    start_y,
-                    start_x,
-                    block_x,
-                    end_y,
-                });
-            } else {
-                _ = try writer.print("{c}{}-{c}{}", .{
-                    start_x,
-                    start_y,
-                    start_x,
-                    end_y,
-                });
-            }
-        },
-    }
-
-    // Write comment for winning state
-    if (turn.winning) |winning| {
-        _ = try writer.write(switch (winning) {
-            .job_in_one => "x",
-            .win => "xx",
-        });
-    }
-
-    // Write special action
-    if (turn.special_action) |special_action| {
-        _ = try writer.write(switch (special_action) {
-            .gold_removed => "(>)",
-            .worm => "(w)",
-        });
-    }
-    // Write comment for quality
-    if (turn.quality) |quality| {
-        _ = try writer.write(switch (quality) {
-            .very_good => "(!!)",
-            .good => "(!)",
-            .interesting => "(!?)",
-            .bad => "(?)",
-            .very_bad => "(??)",
-        });
-    }
-
-    return buffer;
-}
 
 test "format horizontal simple move" {
     const turn: Turn = .{
@@ -195,8 +202,10 @@ test "format horizontal simple move" {
         } },
     };
 
-    const formatted = try format_turn(turn);
-    try std.testing.expectEqualStrings("bF4-C4", formatted[0..6]);
+    var buffer: [6]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{turn});
+    try std.testing.expectEqualStrings("bF4-C4", &buffer);
 }
 
 test "format horizontal block move" {
@@ -210,8 +219,10 @@ test "format horizontal block move" {
         } },
     };
 
-    const formatted = try format_turn(turn);
-    try std.testing.expectEqualStrings("w▢A56-C56", formatted[0..11]);
+    var buffer: [11]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{turn});
+    try std.testing.expectEqualStrings("w▢A56-C56", &buffer);
 }
 
 test "format vertical simple move" {
@@ -225,8 +236,10 @@ test "format vertical simple move" {
         } },
     };
 
-    const formatted = try format_turn(turn);
-    try std.testing.expectEqualStrings("bG2-G5", formatted[0..6]);
+    var buffer: [6]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{turn});
+    try std.testing.expectEqualStrings("bG2-G5", &buffer);
 }
 
 test "format vertical block move" {
@@ -240,8 +253,10 @@ test "format vertical block move" {
         } },
     };
 
-    const formatted = try format_turn(turn);
-    try std.testing.expectEqualStrings("w▢DF10-DF1", formatted[0..12]);
+    var buffer: [12]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{turn});
+    try std.testing.expectEqualStrings("w▢DF10-DF1", &buffer);
 }
 
 test "format diagonal move 1" {
@@ -253,47 +268,46 @@ test "format diagonal move 1" {
         } },
     };
 
-    const formatted = try format_turn(turn);
-    try std.testing.expectEqualStrings("bA1-E5", formatted[0..6]);
+    var buffer: [6]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{turn});
+    try std.testing.expectEqualStrings("bA1-E5", &buffer);
 }
 
 test "format diagonal move 2" {
-    const turn: Turn = .{
-        .by = .white,
-        .move = .{ .diagonal = .{
-            .from = .top_right,
-            .distance = 3,
-        } },
-    };
+    const move: Move = .{ .diagonal = .{
+        .from = .top_right,
+        .distance = 3,
+    } };
 
-    const formatted = try format_turn(turn);
-    try std.testing.expectEqualStrings("wJ10-G7", formatted[0..7]);
+    var buffer: [6]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{move});
+    try std.testing.expectEqualStrings("J10-G7", &buffer);
 }
 
 test "format diagonal move 3" {
-    const turn: Turn = .{
-        .by = .black,
-        .move = .{ .diagonal = .{
-            .from = .top_left,
-            .distance = 5,
-        } },
-    };
+    const move: Move = .{ .diagonal = .{
+        .from = .top_left,
+        .distance = 5,
+    } };
 
-    const formatted = try format_turn(turn);
-    try std.testing.expectEqualStrings("bA10-F5", formatted[0..7]);
+    var buffer: [6]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{move});
+    try std.testing.expectEqualStrings("A10-F5", &buffer);
 }
 
 test "format diagonal move 4" {
-    const turn: Turn = .{
-        .by = .white,
-        .move = .{ .diagonal = .{
-            .from = .bottom_right,
-            .distance = 9,
-        } },
-    };
+    const move: Move = .{ .diagonal = .{
+        .from = .bottom_right,
+        .distance = 9,
+    } };
 
-    const formatted = try format_turn(turn);
-    try std.testing.expectEqualStrings("wJ1-A10", formatted[0..7]);
+    var buffer: [6]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{move});
+    try std.testing.expectEqualStrings("J1-A10", &buffer);
 }
 
 test "format full move with comments" {
@@ -310,8 +324,10 @@ test "format full move with comments" {
         .winning = .job_in_one,
     };
 
-    const formatted = try format_turn(turn);
-    try std.testing.expectEqualStrings("b▢EF1-EF10x(>)(!?)", formatted[0..20]);
+    var buffer: [20]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{turn});
+    try std.testing.expectEqualStrings("b▢EF1-EF10x(>)(!?)", &buffer);
 }
 
 test "format move resulting in maximum string length" {
@@ -328,6 +344,9 @@ test "format move resulting in maximum string length" {
         .winning = .win,
     };
 
-    const formatted = try format_turn(turn);
-    try std.testing.expectEqualStrings("w▢D810-J810xx(>)(!!)", formatted[0..22]);
+    var buffer: [max_turn_str_len]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{turn});
+    try std.testing.expectEqualStrings("w▢D810-J810xx(>)(!!)", &buffer);
+    try std.testing.expectEqual(max_turn_str_len, buffer.len);
 }

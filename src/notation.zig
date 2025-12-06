@@ -344,9 +344,14 @@ test "format move resulting in maximum string length" {
         .winning = .win,
     };
 
-    var buffer: [max_turn_str_len]u8 = undefined;
+    var buffer: [max_turn_str_len]u8 = .{255} ** max_turn_str_len;
     var writer = std.io.Writer.fixed(&buffer);
     _ = try writer.print("{f}", .{turn});
     try std.testing.expectEqualStrings("w▢D810-J810xx(>)(!!)", &buffer);
-    try std.testing.expectEqual(max_turn_str_len, buffer.len);
+
+    // Ensure that no bytes in the buffer were unused.
+    // This confirms that max_turn_str_len is the smallest it can be.
+    for (buffer) |b| {
+        try std.testing.expect(b != 255);
+    }
 }

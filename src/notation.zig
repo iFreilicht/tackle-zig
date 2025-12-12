@@ -29,6 +29,78 @@ const Corner = enum {
     top_left, // A10
     top_right, // J10
 };
+
+/// A row on the board, identified by its Y coordinate (1-10, 0 is not a valid value!)
+/// Rows are labeled 1-10.
+const RowY = enum(u4) {
+    _1 = 1,
+    _2 = 2,
+    _3 = 3,
+    _4 = 4,
+    _5 = 5,
+    _6 = 6,
+    _7 = 7,
+    _8 = 8,
+    _9 = 9,
+    _10 = 10,
+
+    pub fn plus(self: @This(), block_size: BlockSize) @This() {
+        return @enumFromInt(@intFromEnum(self) + @intFromEnum(block_size));
+    }
+
+    pub fn distance(self: @This(), other: @This()) u4 {
+        const s = @intFromEnum(self);
+        const o = @intFromEnum(other);
+        return if (s > o) s - o else o - s;
+    }
+};
+
+fn get_block_height(first: RowY, last: RowY) BlockSize {
+    return @enumFromInt(@intFromEnum(last) - @intFromEnum(first));
+}
+
+/// A column on the board, identified by its X coordinate (1-10, 0 is not a valid value!)
+/// Columns are labeled A-J, see also the `column_letters` constant.
+const ColumnX = enum(u4) {
+    A = 1,
+    B = 2,
+    C = 3,
+    D = 4,
+    E = 5,
+    F = 6,
+    G = 7,
+    H = 8,
+    I = 9, // output as 'i', see `column_letters`
+    J = 10,
+
+    pub fn plus(self: @This(), block_size: BlockSize) @This() {
+        return @enumFromInt(@intFromEnum(self) + @intFromEnum(block_size));
+    }
+
+    pub fn distance(self: @This(), other: @This()) u4 {
+        const s = @intFromEnum(self);
+        const o = @intFromEnum(other);
+        return if (s > o) s - o else o - s;
+    }
+
+    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
+        const c = column_letters[@intFromEnum(self) - 1];
+        _ = try writer.writeByte(c);
+    }
+};
+
+fn get_block_width(first: ColumnX, last: ColumnX) BlockSize {
+    return @enumFromInt(@intFromEnum(last) - @intFromEnum(first));
+}
+
+/// Size of a block perpendicular to the move direction (2-4, 0 means no block)
+/// Blocks can easily be longer than 4 in the move direction, but this is not represented
+/// in the notation anyway. 4 is the maximum because for a block of 5 to move perpendicularly
+/// to the side that is 5 units wide, the block would have to contain 25 pieces.
+/// However, a maximum of 18 pieces can be placed per player, so a block of 5 is impossible.
+/// A block of 4 is also unlikely to happen in regular play, but still possible in theory.
+const BlockSize = enum(u2) { no_block = 0, _2 = 1, _3 = 2, _4 = 3 };
+
 const DiagonalMove = struct {
     from: Corner,
     distance: u4,
@@ -60,27 +132,27 @@ const DiagonalMove = struct {
         };
         const start_x_str = column_letters[start_x - 1];
         const end_e_x_str = column_letters[end_x - 1];
-        _ = try writer.print("{c}{}-{c}{}", .{ start_x_str, start_y, end_e_x_str, end_y });
+        _ = try writer.print("{c}{d}-{c}{d}", .{ start_x_str, start_y, end_e_x_str, end_y });
     }
 };
 
 const HorizontalMove = struct {
-    from_x: u4,
-    to_x: u4,
-    y: u4,
-    block_height: u2, // 0 means no block (i.e. height of 1), 1 means block of height 2, etc.
+    from_x: ColumnX,
+    to_x: ColumnX,
+    y: RowY,
+    block_height: BlockSize,
 
     fn is_block(self: @This()) bool {
-        return self.block_height > 0;
+        return self.block_height != .no_block;
     }
 
     pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
-        const start_x = column_letters[self.from_x];
-        const end_x = column_letters[self.to_x];
-        const start_y: u4 = self.y + 1;
+        const start_x = self.from_x;
+        const end_x = self.to_x;
+        const start_y = self.y;
         if (self.is_block()) {
-            const block_y = start_y + self.block_height;
-            _ = try writer.print("▢{c}{}{}-{c}{}{}", .{
+            const block_y = start_y.plus(self.block_height);
+            _ = try writer.print("▢{f}{d}{d}-{f}{d}{d}", .{
                 start_x,
                 start_y,
                 block_y,
@@ -89,7 +161,7 @@ const HorizontalMove = struct {
                 block_y,
             });
         } else {
-            _ = try writer.print("{c}{}-{c}{}", .{
+            _ = try writer.print("{f}{d}-{f}{d}", .{
                 start_x,
                 start_y,
                 end_x,
@@ -98,23 +170,24 @@ const HorizontalMove = struct {
         }
     }
 };
+
 const VerticalMove = struct {
-    from_y: u4,
-    to_y: u4,
-    x: u4,
-    block_width: u2, // 0 means no block (i.e. width of 1), 1 means block of width 2, etc.
+    from_y: RowY,
+    to_y: RowY,
+    x: ColumnX,
+    block_width: BlockSize,
 
     fn is_block(self: @This()) bool {
-        return self.block_width > 0;
+        return self.block_width != .no_block;
     }
 
     pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
-        const start_x = column_letters[self.x];
-        const start_y: u4 = self.from_y + 1;
-        const end_y: u4 = self.to_y + 1;
+        const start_x = self.x;
+        const start_y = self.from_y;
+        const end_y = self.to_y;
         if (self.is_block()) {
-            const block_x = column_letters[self.x + self.block_width];
-            _ = try writer.print("{s}{c}{c}{}-{c}{c}{}", .{
+            const block_x = start_x.plus(self.block_width);
+            _ = try writer.print("{s}{f}{f}{d}-{f}{f}{d}", .{
                 block_sigil,
                 start_x,
                 block_x,
@@ -124,7 +197,7 @@ const VerticalMove = struct {
                 end_y,
             });
         } else {
-            _ = try writer.print("{c}{}-{c}{}", .{
+            _ = try writer.print("{f}{d}-{f}{d}", .{
                 start_x,
                 start_y,
                 start_x,
@@ -226,27 +299,25 @@ const TurnParser = struct {
         WinningCommentInvalid,
     };
 
-    by: ?Player = null,
-    column_start: ?u4 = null,
-    row_start: ?u4 = null,
-    column_end: ?u4 = null,
-    row_end: ?u4 = null,
-    block_width: ?u2 = null,
-    block_height: ?u2 = null,
-    move: ?Move = null,
-    winning: ?CommentWinning = null,
-    special_action: ?SpecialAction = null,
-    quality: ?CommentQuality = null,
-
     pub fn parse(reader: *std.io.Reader) !Turn {
-        var self: TurnParser = .{};
+        var by: Player = undefined;
+        var column_start: ColumnX = undefined;
+        var row_start: RowY = undefined;
+        var column_end: ColumnX = undefined;
+        var row_end: RowY = undefined;
+        var block_width: ?BlockSize = null;
+        var block_height: ?BlockSize = null;
+        var winning: ?CommentWinning = null;
+        var special_action: ?SpecialAction = null;
+        var quality: ?CommentQuality = null;
+
         parse: switch (State.start) {
             .start => {
                 continue :parse .color;
             },
             .color => {
                 const c = try reader.takeByte();
-                self.by = switch (c) {
+                by = switch (c) {
                     'w' => .white,
                     'b' => .black,
                     else => return Error.ColorInvalid,
@@ -264,42 +335,40 @@ const TurnParser = struct {
                 continue :parse .letter_start;
             },
             .letter_start => {
-                self.column_start = try parse_letter(reader);
+                column_start = try parse_letter(reader);
                 continue :parse .second_letter_start;
             },
             .second_letter_start => {
-                const column: u4 = parse_letter(reader) catch |err| {
+                const column = parse_letter(reader) catch |err| {
                     if (err == Error.ColumnInvalid) {
                         // No second column means no block move
-                        self.block_width = 0;
+                        block_width = .no_block;
                         continue :parse .number_start;
                     } else {
                         return err;
                     }
                 };
-                const column_start = self.column_start orelse unreachable;
-                if (column <= column_start) return Error.SecondColumnSmallerThanFirst;
-                self.block_width = @intCast(column - column_start);
+                if (@intFromEnum(column) <= @intFromEnum(column_start)) return Error.SecondColumnSmallerThanFirst;
+                block_width = get_block_width(column_start, column);
                 continue :parse .number_start;
             },
             .number_start => {
-                self.row_start = try parse_number(reader);
-                if (self.row_start == 10) continue :parse .dash;
+                row_start = try parse_number(reader);
+                if (row_start == ._10) continue :parse .dash;
                 continue :parse .second_number_start;
             },
             .second_number_start => {
                 const row = parse_number(reader) catch |err| {
                     if (err == Error.RowInvalid) {
                         // No second row means no block move
-                        self.block_height = 0;
+                        block_height = .no_block;
                         continue :parse .dash;
                     } else {
                         return err;
                     }
                 };
-                const row_start = self.row_start orelse unreachable;
-                if (row <= row_start) return Error.SecondRowSmallerThanFirst;
-                self.block_height = @intCast(row - row_start);
+                if (@intFromEnum(row) <= @intFromEnum(row_start)) return Error.SecondRowSmallerThanFirst;
+                block_height = get_block_height(row_start, row);
                 continue :parse .dash;
             },
             .dash => {
@@ -307,7 +376,7 @@ const TurnParser = struct {
                 continue :parse .letter_end;
             },
             .letter_end => {
-                self.column_end = try parse_letter(reader);
+                column_end = try parse_letter(reader);
                 continue :parse .second_letter_end;
             },
             .second_letter_end => {
@@ -318,12 +387,12 @@ const TurnParser = struct {
                         return err;
                     }
                 };
-                if (column <= self.column_start orelse unreachable) return Error.SecondColumnSmallerThanFirst;
+                if (@intFromEnum(column) <= @intFromEnum(column_start)) return Error.SecondColumnSmallerThanFirst;
                 // block width was already determined when parsing the start letters
                 continue :parse .number_end;
             },
             .number_end => {
-                self.row_end = try parse_number(reader);
+                row_end = try parse_number(reader);
                 continue :parse .second_number_end;
             },
             .second_number_end => {
@@ -336,7 +405,7 @@ const TurnParser = struct {
                         return err;
                     }
                 };
-                if (row <= self.row_end orelse unreachable) return Error.SecondRowSmallerThanFirst;
+                if (@intFromEnum(row) <= @intFromEnum(row_end)) return Error.SecondRowSmallerThanFirst;
                 // block height was already determined when parsing the start numbers
                 continue :parse .winning;
             },
@@ -349,9 +418,9 @@ const TurnParser = struct {
                     }
                 };
                 if (std.mem.eql(u8, s, "x")) {
-                    self.winning = .job_in_one;
+                    winning = .job_in_one;
                 } else if (std.mem.eql(u8, s, "xx")) {
-                    self.winning = .win;
+                    winning = .win;
                 } else if (s.len != 0) return Error.WinningCommentInvalid;
                 continue :parse .special_action;
             },
@@ -364,12 +433,12 @@ const TurnParser = struct {
                     }
                 };
                 if (std.mem.startsWith(u8, s, "(>)")) {
-                    self.special_action = .gold_removed;
+                    special_action = .gold_removed;
                 } else if (std.mem.startsWith(u8, s, "(w)")) {
-                    self.special_action = .worm;
+                    special_action = .worm;
                 } else {
                     // Rewind the reader as this comment might be a quality comment
-                    reader.seek -= @intCast(s.len);
+                    reader.seek -= s.len;
                 }
                 continue :parse .quality;
             },
@@ -383,55 +452,50 @@ const TurnParser = struct {
                 };
                 if (s.len == 0) continue :parse .done;
                 if (std.mem.startsWith(u8, s, "(!!)")) {
-                    self.quality = .very_good;
+                    quality = .very_good;
                 } else if (std.mem.startsWith(u8, s, "(!)")) {
-                    self.quality = .good;
+                    quality = .good;
                 } else if (std.mem.startsWith(u8, s, "(!?)")) {
-                    self.quality = .interesting;
+                    quality = .interesting;
                 } else if (std.mem.startsWith(u8, s, "(?)")) {
-                    self.quality = .bad;
+                    quality = .bad;
                 } else if (std.mem.startsWith(u8, s, "(??)")) {
-                    self.quality = .very_bad;
+                    quality = .very_bad;
                 }
                 continue :parse .done;
             },
-            else => {},
+            .done => {},
         }
 
-        const col_start = self.column_start orelse unreachable;
-        const col_end = self.column_end orelse unreachable;
-        const row_start = self.row_start orelse unreachable;
-        const row_end = self.row_end orelse unreachable;
+        var move: Move = undefined;
         if (row_start == row_end) {
             // Horizontal move
-            self.move = .{ .horizontal = .{
-                .from_x = col_start,
-                .to_x = col_end,
+            move = .{ .horizontal = .{
+                .from_x = column_start,
+                .to_x = column_end,
                 .y = row_start,
-                .block_height = self.block_height orelse unreachable,
+                .block_height = block_height orelse unreachable,
             } };
-        } else if (col_start == col_end) {
+        } else if (column_start == column_end) {
             // Vertical move
-            self.move = .{ .vertical = .{
+            move = .{ .vertical = .{
                 .from_y = row_start,
                 .to_y = row_end,
-                .x = col_start,
-                .block_width = self.block_width orelse unreachable,
+                .x = column_start,
+                .block_width = block_width orelse unreachable,
             } };
         } else {
             // Diagonal move
             const from: Corner = switch (row_start) {
-                1 => if (col_start == 1) .bottom_left else .bottom_right,
-                10 => if (col_start == 1) .top_left else .top_right,
+                ._1 => if (column_start == .A) .bottom_left else .bottom_right,
+                ._10 => if (column_start == .A) .top_left else .top_right,
                 else => return Error.RowTooShort,
             };
-            const distance_col = if (from == .bottom_left or from == .top_left) col_end - col_start else col_start - col_end;
-            const distance_row = if (from == .bottom_left or from == .bottom_right) row_end - row_start else row_start - row_end;
-            if (distance_col != distance_row) {
-                return Error.DiagonalMoveIllegal;
-            }
+            const distance_col = column_start.distance(column_end);
+            const distance_row = row_start.distance(row_end);
+            if (distance_col != distance_row) return Error.DiagonalMoveIllegal;
 
-            self.move = .{ .diagonal = .{
+            move = .{ .diagonal = .{
                 .from = from,
                 .distance = distance_col,
             } };
@@ -439,31 +503,31 @@ const TurnParser = struct {
 
         // After parsing, construct the Turn object
         return Turn{
-            .by = self.by orelse return error.InvalidFormat,
-            .move = self.move orelse return error.InvalidFormat,
-            .winning = self.winning,
-            .special_action = self.special_action,
-            .quality = self.quality,
+            .by = by,
+            .move = move,
+            .winning = winning,
+            .special_action = special_action,
+            .quality = quality,
         };
     }
 
-    fn parse_letter(reader: *std.io.Reader) !u4 {
+    fn parse_letter(reader: *std.io.Reader) !ColumnX {
         const c = try reader.peek(1);
         const col = std.mem.indexOf(u8, &column_letters, c) orelse return Error.ColumnInvalid;
         reader.toss(1);
-        return @intCast(col + 1);
+        return @enumFromInt(col + 1);
     }
 
-    fn parse_number(reader: *std.io.Reader) !u4 {
+    fn parse_number(reader: *std.io.Reader) !RowY {
         const s = reader.peek(2) catch try reader.peek(1);
         if (std.mem.eql(u8, s, "10")) {
             reader.toss(2);
-            return 10;
+            return ._10;
         }
         const c = s[0];
         if (c < '1' or c > '9') return Error.RowInvalid;
         reader.toss(1);
-        return @intCast(c - '0');
+        return @enumFromInt(c - '0');
     }
 };
 
@@ -471,10 +535,10 @@ test "format horizontal simple move" {
     const turn: Turn = .{
         .by = .black,
         .move = .{ .horizontal = .{
-            .from_x = 5,
-            .to_x = 2,
-            .y = 3,
-            .block_height = 0,
+            .from_x = .F,
+            .to_x = .C,
+            .y = ._4,
+            .block_height = .no_block,
         } },
     };
 
@@ -488,10 +552,10 @@ test "format horizontal block move" {
     const turn: Turn = .{
         .by = .white,
         .move = .{ .horizontal = .{
-            .from_x = 0,
-            .to_x = 2,
-            .y = 4,
-            .block_height = 1,
+            .from_x = .A,
+            .to_x = .C,
+            .y = ._5,
+            .block_height = ._2,
         } },
     };
 
@@ -505,10 +569,10 @@ test "format vertical simple move" {
     const turn: Turn = .{
         .by = .black,
         .move = .{ .vertical = .{
-            .from_y = 1,
-            .to_y = 4,
-            .x = 6,
-            .block_width = 0,
+            .from_y = ._2,
+            .to_y = ._5,
+            .x = .G,
+            .block_width = .no_block,
         } },
     };
 
@@ -522,10 +586,10 @@ test "format vertical block move" {
     const turn: Turn = .{
         .by = .white,
         .move = .{ .vertical = .{
-            .from_y = 9,
-            .to_y = 0,
-            .x = 3,
-            .block_width = 2,
+            .from_y = ._10,
+            .to_y = ._1,
+            .x = .D,
+            .block_width = ._3,
         } },
     };
 
@@ -590,10 +654,10 @@ test "format full move with comments" {
     const turn: Turn = .{
         .by = .black,
         .move = .{ .vertical = .{
-            .from_y = 0,
-            .to_y = 9,
-            .x = 4,
-            .block_width = 1,
+            .from_y = ._1,
+            .to_y = ._10,
+            .x = .E,
+            .block_width = ._2,
         } },
         .special_action = .gold_removed,
         .quality = .interesting,
@@ -610,10 +674,10 @@ test "format move resulting in maximum string length" {
     const turn: Turn = .{
         .by = .white,
         .move = .{ .horizontal = .{
-            .from_x = 3,
-            .to_x = 9,
-            .y = 7,
-            .block_height = 2,
+            .from_x = .D,
+            .to_x = .J,
+            .y = ._8,
+            .block_height = ._3,
         } },
         .special_action = .gold_removed,
         .quality = .very_good,
@@ -638,10 +702,10 @@ test "parse horizontal simple move" {
     const expected: Turn = .{
         .by = .black,
         .move = .{ .horizontal = .{
-            .from_x = 8,
-            .to_x = 2,
-            .y = 4,
-            .block_height = 0,
+            .from_x = .H,
+            .to_x = .B,
+            .y = ._4,
+            .block_height = .no_block,
         } },
     };
 
@@ -654,10 +718,10 @@ test "parse horizontal block move" {
     const expected: Turn = .{
         .by = .white,
         .move = .{ .horizontal = .{
-            .from_x = 4,
-            .to_x = 7,
-            .y = 5,
-            .block_height = 1,
+            .from_x = .D,
+            .to_x = .G,
+            .y = ._5,
+            .block_height = ._2,
         } },
     };
 
@@ -670,10 +734,10 @@ test "parse vertical simple move" {
     const expected: Turn = .{
         .by = .white,
         .move = .{ .vertical = .{
-            .from_y = 2,
-            .to_y = 5,
-            .x = 3,
-            .block_width = 0,
+            .from_y = ._2,
+            .to_y = ._5,
+            .x = .C,
+            .block_width = .no_block,
         } },
     };
 
@@ -686,10 +750,10 @@ test "parse vertical block move" {
     const expected: Turn = .{
         .by = .black,
         .move = .{ .vertical = .{
-            .from_y = 10,
-            .to_y = 1,
-            .x = 5,
-            .block_width = 1,
+            .from_y = ._10,
+            .to_y = ._1,
+            .x = .E,
+            .block_width = ._2,
         } },
     };
 
@@ -758,10 +822,10 @@ test "parse full move with comments" {
     const expected: Turn = .{
         .by = .black,
         .move = .{ .vertical = .{
-            .from_y = 1,
-            .to_y = 10,
-            .x = 5,
-            .block_width = 1,
+            .from_y = ._1,
+            .to_y = ._10,
+            .x = .E,
+            .block_width = ._2,
         } },
         .special_action = .gold_removed,
         .quality = .interesting,
@@ -777,10 +841,10 @@ test "parse move only with quality comment" {
     const expected: Turn = .{
         .by = .white,
         .move = .{ .vertical = .{
-            .from_y = 1,
-            .to_y = 2,
-            .x = 1,
-            .block_width = 0,
+            .from_y = ._1,
+            .to_y = ._2,
+            .x = .A,
+            .block_width = .no_block,
         } },
         .quality = .very_good,
     };
@@ -794,10 +858,10 @@ test "parse move only with special action comment" {
     const expected: Turn = .{
         .by = .black,
         .move = .{ .vertical = .{
-            .from_y = 10,
-            .to_y = 9,
-            .x = 10,
-            .block_width = 0,
+            .from_y = ._10,
+            .to_y = ._9,
+            .x = .J,
+            .block_width = .no_block,
         } },
         .special_action = .gold_removed,
     };
@@ -811,10 +875,10 @@ test "parse move only with winning comment" {
     const expected: Turn = .{
         .by = .white,
         .move = .{ .vertical = .{
-            .from_y = 3,
-            .to_y = 4,
-            .x = 3,
-            .block_width = 0,
+            .from_y = ._3,
+            .to_y = ._4,
+            .x = .C,
+            .block_width = .no_block,
         } },
         .winning = .job_in_one,
     };
@@ -828,10 +892,10 @@ test "parse move with maximum string length" {
     const expected: Turn = .{
         .by = .white,
         .move = .{ .horizontal = .{
-            .from_x = 4,
-            .to_x = 10,
-            .y = 8,
-            .block_height = 2,
+            .from_x = .D,
+            .to_x = .J,
+            .y = ._8,
+            .block_height = ._3,
         } },
         .special_action = .gold_removed,
         .quality = .very_good,

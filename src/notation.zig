@@ -23,7 +23,7 @@ const CommentWinning = enum {
     win, // xx
 };
 
-const Corner = enum {
+pub const Corner = enum {
     bottom_left, // A1
     bottom_right, // J1
     top_left, // A10
@@ -32,7 +32,7 @@ const Corner = enum {
 
 /// A row on the board, identified by its Y coordinate (1-10, 0 is not a valid value!)
 /// Rows are labeled 1-10.
-const RowY = enum(u4) {
+pub const RowY = enum(u4) {
     _1 = 1,
     _2 = 2,
     _3 = 3,
@@ -43,6 +43,11 @@ const RowY = enum(u4) {
     _8 = 8,
     _9 = 9,
     _10 = 10,
+
+    pub fn index(self: @This()) u4 {
+        const i = @intFromEnum(self);
+        return i - 1;
+    }
 
     pub fn plus(self: @This(), block_size: BlockSize) @This() {
         return @enumFromInt(@intFromEnum(self) + @intFromEnum(block_size));
@@ -73,7 +78,7 @@ fn get_block_height(first: RowY, last: RowY) BlockSize {
 
 /// A column on the board, identified by its X coordinate (1-10, 0 is not a valid value!)
 /// Columns are labeled A-J, see also the `column_letters` constant.
-const ColumnX = enum(u4) {
+pub const ColumnX = enum(u4) {
     A = 1,
     B = 2,
     C = 3,
@@ -84,6 +89,11 @@ const ColumnX = enum(u4) {
     H = 8,
     I = 9, // output as 'i', see `column_letters`
     J = 10,
+
+    pub fn index(self: @This()) u4 {
+        const i = @intFromEnum(self);
+        return i - 1;
+    }
 
     pub fn plus(self: @This(), block_size: BlockSize) @This() {
         return @enumFromInt(@intFromEnum(self) + @intFromEnum(block_size));
@@ -118,9 +128,9 @@ fn get_block_width(first: ColumnX, last: ColumnX) BlockSize {
 /// to the side that is 5 units wide, the block would have to contain 25 pieces.
 /// However, a maximum of 18 pieces can be placed per player, so a block of 5 is impossible.
 /// A block of 4 is also unlikely to happen in regular play, but still possible in theory.
-const BlockSize = enum(u2) { no_block = 0, _2 = 1, _3 = 2, _4 = 3 };
+pub const BlockSize = enum(u2) { no_block = 0, _2 = 1, _3 = 2, _4 = 3 };
 
-const DiagonalMove = struct {
+pub const DiagonalMove = struct {
     from: Corner,
     distance: u4,
 
@@ -155,7 +165,7 @@ const DiagonalMove = struct {
     }
 };
 
-const HorizontalMove = struct {
+pub const HorizontalMove = struct {
     from_x: ColumnX,
     to_x: ColumnX,
     y: RowY,
@@ -190,7 +200,7 @@ const HorizontalMove = struct {
     }
 };
 
-const VerticalMove = struct {
+pub const VerticalMove = struct {
     from_y: RowY,
     to_y: RowY,
     x: ColumnX,
@@ -226,7 +236,7 @@ const VerticalMove = struct {
     }
 };
 
-const Move = union(enum) {
+pub const Move = union(enum) {
     diagonal: DiagonalMove,
     horizontal: HorizontalMove,
     vertical: VerticalMove,

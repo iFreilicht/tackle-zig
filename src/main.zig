@@ -1,9 +1,16 @@
 const std = @import("std");
 const tackle_zig = @import("tackle.zig");
+const text_renderer = tackle_zig.text_renderer;
 
 pub fn main() !void {
-    const board = try tackle_zig.board();
-    std.debug.print("{s}", .{board});
+    const stdout = std.fs.File.stdout();
+    var buffer: [50]u8 = undefined;
+    var writer = stdout.writer(&buffer);
+    try text_renderer.render_board(&writer.interface);
+}
+
+test "main runs without errors" {
+    try main();
 }
 
 test "simple test" {

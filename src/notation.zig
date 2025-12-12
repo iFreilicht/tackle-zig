@@ -53,6 +53,18 @@ const RowY = enum(u4) {
         const o = @intFromEnum(other);
         return if (s > o) s - o else o - s;
     }
+
+    fn parse(reader: *std.io.Reader) !@This() {
+        const s = reader.peek(2) catch try reader.peek(1);
+        if (std.mem.eql(u8, s, "10")) {
+            reader.toss(2);
+            return ._10;
+        }
+        const c = s[0];
+        if (c < '1' or c > '9') return error.RowInvalid;
+        reader.toss(1);
+        return @enumFromInt(c - '0');
+    }
 };
 
 fn get_block_height(first: RowY, last: RowY) BlockSize {
@@ -86,6 +98,13 @@ const ColumnX = enum(u4) {
     pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
         const c = column_letters[@intFromEnum(self) - 1];
         _ = try writer.writeByte(c);
+    }
+
+    fn parse(reader: *std.io.Reader) !@This() {
+        const c = try reader.peek(1);
+        const col = std.mem.indexOf(u8, &column_letters, c) orelse return error.ColumnInvalid;
+        reader.toss(1);
+        return @enumFromInt(col + 1);
     }
 };
 
@@ -288,10 +307,8 @@ const TurnParser = struct {
 
     const Error = error{
         ColorInvalid,
-        ColumnInvalid,
         SecondColumnSmallerThanFirst,
         RowTooShort,
-        RowInvalid,
         FirstRowIs10,
         SecondRowSmallerThanFirst,
         DiagonalMoveIllegal,
@@ -335,12 +352,12 @@ const TurnParser = struct {
                 continue :parse .letter_start;
             },
             .letter_start => {
-                column_start = try parse_letter(reader);
+                column_start = try ColumnX.parse(reader);
                 continue :parse .second_letter_start;
             },
             .second_letter_start => {
-                const column = parse_letter(reader) catch |err| {
-                    if (err == Error.ColumnInvalid) {
+                const column = ColumnX.parse(reader) catch |err| {
+                    if (err == error.ColumnInvalid) {
                         // No second column means no block move
                         block_width = .no_block;
                         continue :parse .number_start;
@@ -353,13 +370,13 @@ const TurnParser = struct {
                 continue :parse .number_start;
             },
             .number_start => {
-                row_start = try parse_number(reader);
+                row_start = try RowY.parse(reader);
                 if (row_start == ._10) continue :parse .dash;
                 continue :parse .second_number_start;
             },
             .second_number_start => {
-                const row = parse_number(reader) catch |err| {
-                    if (err == Error.RowInvalid) {
+                const row = RowY.parse(reader) catch |err| {
+                    if (err == error.RowInvalid) {
                         // No second row means no block move
                         block_height = .no_block;
                         continue :parse .dash;
@@ -376,12 +393,12 @@ const TurnParser = struct {
                 continue :parse .letter_end;
             },
             .letter_end => {
-                column_end = try parse_letter(reader);
+                column_end = try ColumnX.parse(reader);
                 continue :parse .second_letter_end;
             },
             .second_letter_end => {
-                const column = parse_letter(reader) catch |err| {
-                    if (err == Error.ColumnInvalid) {
+                const column = ColumnX.parse(reader) catch |err| {
+                    if (err == error.ColumnInvalid) {
                         continue :parse .number_end;
                     } else {
                         return err;
@@ -392,12 +409,12 @@ const TurnParser = struct {
                 continue :parse .number_end;
             },
             .number_end => {
-                row_end = try parse_number(reader);
+                row_end = try RowY.parse(reader);
                 continue :parse .second_number_end;
             },
             .second_number_end => {
-                const row = parse_number(reader) catch |err| {
-                    if (err == Error.RowInvalid) {
+                const row = RowY.parse(reader) catch |err| {
+                    if (err == error.RowInvalid) {
                         continue :parse .winning;
                     } else if (err == error.EndOfStream) {
                         continue :parse .done;
@@ -509,25 +526,6 @@ const TurnParser = struct {
             .special_action = special_action,
             .quality = quality,
         };
-    }
-
-    fn parse_letter(reader: *std.io.Reader) !ColumnX {
-        const c = try reader.peek(1);
-        const col = std.mem.indexOf(u8, &column_letters, c) orelse return Error.ColumnInvalid;
-        reader.toss(1);
-        return @enumFromInt(col + 1);
-    }
-
-    fn parse_number(reader: *std.io.Reader) !RowY {
-        const s = reader.peek(2) catch try reader.peek(1);
-        if (std.mem.eql(u8, s, "10")) {
-            reader.toss(2);
-            return ._10;
-        }
-        const c = s[0];
-        if (c < '1' or c > '9') return Error.RowInvalid;
-        reader.toss(1);
-        return @enumFromInt(c - '0');
     }
 };
 

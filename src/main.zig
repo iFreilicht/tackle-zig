@@ -1,12 +1,17 @@
 const std = @import("std");
 const tackle_zig = @import("tackle.zig");
+const state = @import("state.zig");
+const Board = state.Board;
 const text_renderer = tackle_zig.text_renderer;
 
 pub fn main() !void {
     const stdout = std.fs.File.stdout();
     var buffer: [50]u8 = undefined;
     var writer = stdout.writer(&buffer);
-    try text_renderer.render_board(&writer.interface);
+    var board = Board{};
+    try board.place_piece(.white, .A, ._10);
+    try board.place_piece(.black, .D, ._1);
+    try text_renderer.render_board(&writer.interface, &board);
 }
 
 test "main runs without errors" {

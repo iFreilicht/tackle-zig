@@ -76,6 +76,7 @@ pub fn render_board(writer: *std.io.Writer) !void {
                 else if (j_on_line) line_vert else " ",
             };
             _ = try writer.write(glyph);
+            try writer.flush();
         }
 
         _ = try writer.write("\n");

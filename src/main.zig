@@ -9,8 +9,8 @@ pub fn main() !void {
     var buffer: [50]u8 = undefined;
     var writer = stdout.writer(&buffer);
     var board = Board{};
-    try board.place_piece(.white, .A, ._10);
-    try board.place_piece(.black, .D, ._1);
+    try board.place_piece(.white, .{ .A, ._10 });
+    try board.place_piece(.black, .{ .D, ._1 });
     try text_renderer.render_board(&writer.interface, &board);
 }
 

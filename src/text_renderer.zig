@@ -5,6 +5,7 @@ const notation = @import("notation.zig");
 const Board = state.Board;
 const RowY = notation.RowY;
 const ColumnX = notation.ColumnX;
+const Position = notation.Position;
 const board_size = constants.board_size;
 const max_job_size = constants.max_job_size;
 const column_letters = constants.column_letters;
@@ -21,7 +22,7 @@ const xing_left: []const u8 = "├";
 const xing_right: []const u8 = "┤";
 const xing_center: []const u8 = "┼";
 
-const Position = enum { start, end, on_line, on_symbol, other };
+const RenderPosition = enum { start, end, on_line, on_symbol, other };
 const EvenOdd = enum { even, odd };
 
 const margin = 4;
@@ -31,7 +32,7 @@ const col_width = 4;
 const last_i = board_size * row_height + 1;
 const last_j = board_size * col_width + 1;
 
-fn position(i: usize, last: comptime_int, grid_size: comptime_int) Position {
+fn render_position(i: usize, last: comptime_int, grid_size: comptime_int) RenderPosition {
     if (i == 0) {
         return .start;
     } else if (i == last - 1) {
@@ -44,11 +45,10 @@ fn position(i: usize, last: comptime_int, grid_size: comptime_int) Position {
         return .other;
     }
 }
-fn row(i: usize) RowY {
-    return @enumFromInt(10 - (i / row_height));
-}
-fn column(j: usize) ColumnX {
-    return @enumFromInt((j / col_width) + 1);
+fn position(i: usize, j: usize) Position {
+    const col: ColumnX = @enumFromInt((j / col_width) + 1);
+    const row: RowY = @enumFromInt(10 - (i / row_height));
+    return .{ col, row };
 }
 fn iszero(i: usize) bool {
     return i == 0;
@@ -58,7 +58,7 @@ pub fn render_board(writer: *std.io.Writer, board: *const Board) !void {
     var row_number: u8 = board_size;
 
     for (0..last_i) |i| {
-        const i_pos = position(i, last_i, row_height);
+        const i_pos = render_position(i, last_i, row_height);
 
         // Write left margin
         switch (i_pos) {
@@ -70,7 +70,7 @@ pub fn render_board(writer: *std.io.Writer, board: *const Board) !void {
         }
 
         for (0..last_j) |j| {
-            const j_pos = position(j, last_j, col_width);
+            const j_pos = render_position(j, last_j, col_width);
 
             const glyph = switch (i_pos) {
                 .start => switch (j_pos) {
@@ -93,7 +93,7 @@ pub fn render_board(writer: *std.io.Writer, board: *const Board) !void {
                 },
                 .on_symbol => switch (j_pos) {
                     .start, .end, .on_line => line_vert,
-                    .on_symbol => switch (board.get_square(column(j), row(i))) {
+                    .on_symbol => switch (board.get_square(position(i, j))) {
                         .empty => " ",
                         .white => "□",
                         .black => "■",
@@ -186,15 +186,15 @@ test "board with a few pieces is drawn correctly" {
     ;
 
     var board: Board = .{};
-    try board.place_piece(.white, .A, ._10);
-    try board.place_piece(.black, .C, ._9);
-    try board.place_piece(.white, .G, ._9);
-    try board.place_piece(.white, .C, ._8);
-    try board.place_piece(.black, .G, ._8);
-    try board.place_piece(.gold, .D, ._7);
-    try board.place_piece(.white, .J, ._3);
-    try board.place_piece(.white, .E, ._1);
-    try board.place_piece(.black, .J, ._1);
+    try board.place_piece(.white, .{ .A, ._10 });
+    try board.place_piece(.black, .{ .C, ._9 });
+    try board.place_piece(.white, .{ .G, ._9 });
+    try board.place_piece(.white, .{ .C, ._8 });
+    try board.place_piece(.black, .{ .G, ._8 });
+    try board.place_piece(.gold, .{ .D, ._7 });
+    try board.place_piece(.white, .{ .J, ._3 });
+    try board.place_piece(.white, .{ .E, ._1 });
+    try board.place_piece(.black, .{ .J, ._1 });
     var buffer: [2150:0]u8 = undefined;
     var writer = std.io.Writer.fixed(&buffer);
     try render_board(&writer, &board);

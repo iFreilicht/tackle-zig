@@ -28,6 +28,68 @@ pub const Corner = enum {
     bottom_right, // J1
     top_left, // A10
     top_right, // J10
+
+    /// Return the Position of this corner on the board.
+    pub fn to_position(self: @This()) Position {
+        return switch (self) {
+            .bottom_left => .{ .A, ._1 },
+            .bottom_right => .{ .J, ._1 },
+            .top_left => .{ .A, ._10 },
+            .top_right => .{ .J, ._10 },
+        };
+    }
+
+    /// Return a List of all Positions along the diagonal from this corner
+    /// to the opposite corner, excluding this corner itself.
+    /// Pretty naive way of implementing iteration, but it's fine for now.
+    pub fn to_list(self: @This()) [9]Position {
+        return switch (self) {
+            .bottom_left => .{
+                .{ .B, ._2 },
+                .{ .C, ._3 },
+                .{ .D, ._4 },
+                .{ .E, ._5 },
+                .{ .F, ._6 },
+                .{ .G, ._7 },
+                .{ .H, ._8 },
+                .{ .I, ._9 },
+                .{ .J, ._10 },
+            },
+            .bottom_right => .{
+                .{ .I, ._2 },
+                .{ .H, ._3 },
+                .{ .G, ._4 },
+                .{ .F, ._5 },
+                .{ .E, ._6 },
+                .{ .D, ._7 },
+                .{ .C, ._8 },
+                .{ .B, ._9 },
+                .{ .A, ._10 },
+            },
+            .top_left => .{
+                .{ .B, ._9 },
+                .{ .C, ._8 },
+                .{ .D, ._7 },
+                .{ .E, ._6 },
+                .{ .F, ._5 },
+                .{ .G, ._4 },
+                .{ .H, ._3 },
+                .{ .I, ._2 },
+                .{ .J, ._1 },
+            },
+            .top_right => .{
+                .{ .I, ._9 },
+                .{ .H, ._8 },
+                .{ .G, ._7 },
+                .{ .F, ._6 },
+                .{ .E, ._5 },
+                .{ .D, ._4 },
+                .{ .C, ._3 },
+                .{ .B, ._2 },
+                .{ .A, ._1 },
+            },
+        };
+    }
 };
 
 /// A row on the board, identified by its Y coordinate (1-10, 0 is not a valid value!)
@@ -57,6 +119,16 @@ pub const RowY = enum(u4) {
         const s = @intFromEnum(self);
         const o = @intFromEnum(other);
         return if (s > o) s - o else o - s;
+    }
+
+    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
+        switch (self) {
+            ._10 => _ = try writer.write("10"),
+            else => {
+                const d: u8 = @intFromEnum(self);
+                _ = try writer.writeByte(@as(u8, '0' + d));
+            },
+        }
     }
 
     fn parse(reader: *std.io.Reader) !@This() {
@@ -122,6 +194,31 @@ fn get_block_width(first: ColumnX, last: ColumnX) BlockSize {
     return @enumFromInt(@intFromEnum(last) - @intFromEnum(first));
 }
 
+/// Return true if the given square is on the border of the board.
+/// Pieces can only be placed on the border during the opening phase.
+pub fn is_on_border(position: Position) bool {
+    const col, const row = position;
+    return (col == .A or col == .J) and (row == ._1 or row == ._10);
+}
+
+/// Return true if the given square is in the court, i.e. not on the border.
+/// All pieces of a job must be in the court for the job to be completed.
+/// Once all pieces of a player are in the court, the gold piece is removed.
+pub fn is_in_court(position: Position) bool {
+    return !is_on_border(position);
+}
+
+/// Return true if the given square is in the core, i.e. the centermost 16 squares.
+/// The gold piece can only be placed in the core.
+pub fn is_in_core(position: Position) bool {
+    const col, const row = position;
+    const col_int = @intFromEnum(col);
+    const col_in_core = (col_int >= @intFromEnum(.D)) and (col_int <= @intFromEnum(.G));
+    const row_int = @intFromEnum(row);
+    const row_in_core = (row_int >= @intFromEnum(._4)) and (row_int <= @intFromEnum(._7));
+    return col_in_core and row_in_core;
+}
+
 /// Size of a block perpendicular to the move direction (2-4, 0 means no block)
 /// Blocks can easily be longer than 4 in the move direction, but this is not represented
 /// in the notation anyway. 4 is the maximum because for a block of 5 to move perpendicularly
@@ -130,23 +227,30 @@ fn get_block_width(first: ColumnX, last: ColumnX) BlockSize {
 /// A block of 4 is also unlikely to happen in regular play, but still possible in theory.
 pub const BlockSize = enum(u2) { no_block = 0, _2 = 1, _3 = 2, _4 = 3 };
 
+/// A position on the board, identified by its column and row.
+pub const Position = struct { ColumnX, RowY };
+/// A position represented as two u4 integers for easier calculations.
+/// 1-10 for both coordinates, 0 is not a valid value!
+pub const IntPosition = struct { u4, u4 };
+
+pub fn pos_to_int(pos: Position) IntPosition {
+    return .{ @intFromEnum(pos.@"0"), @intFromEnum(pos.@"1") };
+}
+pub fn int_to_pos(int: IntPosition) Position {
+    return .{ @enumFromInt(int.@"0"), @enumFromInt(int.@"1") };
+}
+
 pub const DiagonalMove = struct {
     from: Corner,
     distance: u4,
 
-    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
-        const start_x: u4 = switch (self.from) {
-            .bottom_left => 1,
-            .bottom_right => 10,
-            .top_left => 1,
-            .top_right => 10,
-        };
-        const start_y: u4 = switch (self.from) {
-            .bottom_left => 1,
-            .bottom_right => 1,
-            .top_left => 10,
-            .top_right => 10,
-        };
+    /// Return the starting Position of this diagonal move.
+    pub fn to_start(self: @This()) Position {
+        return self.from.to_position();
+    }
+    /// Return the ending Position of this diagonal move.
+    pub fn to_end(self: @This()) Position {
+        const start_x, const start_y = pos_to_int(self.to_start());
         const end_x: u4 = switch (self.from) {
             .bottom_left => start_x + self.distance,
             .bottom_right => start_x - self.distance,
@@ -159,9 +263,13 @@ pub const DiagonalMove = struct {
             .top_left => start_y - self.distance,
             .top_right => start_y - self.distance,
         };
-        const start_x_str = column_letters[start_x - 1];
-        const end_e_x_str = column_letters[end_x - 1];
-        _ = try writer.print("{c}{d}-{c}{d}", .{ start_x_str, start_y, end_e_x_str, end_y });
+        return int_to_pos(.{ end_x, end_y });
+    }
+
+    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
+        const start_x, const start_y = self.to_start();
+        const end_x, const end_y = self.to_end();
+        _ = try writer.print("{f}{f}-{f}{f}", .{ start_x, start_y, end_x, end_y });
     }
 };
 

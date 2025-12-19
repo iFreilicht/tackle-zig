@@ -22,6 +22,12 @@ const CommentWinning = enum {
     job_in_one, // x
     win, // xx
 };
+pub const Direction = enum(u2) {
+    up, // Along column, increasing row
+    down, // Along column, decreasing row
+    left, // Along row, decreasing column
+    right, // Along row, increasing column
+};
 
 pub const Corner = enum {
     bottom_left, // A1
@@ -111,8 +117,20 @@ pub const RowY = enum(u4) {
         return i - 1;
     }
 
-    pub fn plus(self: @This(), block_size: BlockSize) @This() {
-        return @enumFromInt(@intFromEnum(self) + @intFromEnum(block_size));
+    pub fn plus(self: @This(), block_size: u4) @This() {
+        return @enumFromInt(@intFromEnum(self) + block_size);
+    }
+
+    pub fn minus(self: @This(), block_size: u4) @This() {
+        return @enumFromInt(@intFromEnum(self) - block_size);
+    }
+
+    pub fn min(self: @This(), other: @This()) @This() {
+        return if (@intFromEnum(self) < @intFromEnum(other)) self else other;
+    }
+
+    pub fn max(self: @This(), other: @This()) @This() {
+        return if (@intFromEnum(self) > @intFromEnum(other)) self else other;
     }
 
     pub fn distance(self: @This(), other: @This()) u4 {
@@ -167,8 +185,20 @@ pub const ColumnX = enum(u4) {
         return i - 1;
     }
 
-    pub fn plus(self: @This(), block_size: BlockSize) @This() {
-        return @enumFromInt(@intFromEnum(self) + @intFromEnum(block_size));
+    pub fn plus(self: @This(), block_size: u4) @This() {
+        return @enumFromInt(@intFromEnum(self) + block_size);
+    }
+
+    pub fn minus(self: @This(), block_size: u4) @This() {
+        return @enumFromInt(@intFromEnum(self) - block_size);
+    }
+
+    pub fn min(self: @This(), other: @This()) @This() {
+        return if (@intFromEnum(self) < @intFromEnum(other)) self else other;
+    }
+
+    pub fn max(self: @This(), other: @This()) @This() {
+        return if (@intFromEnum(self) > @intFromEnum(other)) self else other;
     }
 
     pub fn distance(self: @This(), other: @This()) u4 {
@@ -229,6 +259,17 @@ pub const BlockSize = enum(u2) { no_block = 0, _2 = 1, _3 = 2, _4 = 3 };
 
 /// A position on the board, identified by its column and row.
 pub const Position = struct { ColumnX, RowY };
+
+pub fn move_position(pos: Position, direction: Direction, distance: u4) Position {
+    const col, const row = pos;
+    return switch (direction) {
+        .up => .{ col, row.plus(distance) },
+        .down => .{ col, row.minus(distance) },
+        .left => .{ col.minus(distance), row },
+        .right => .{ col.plus(distance), row },
+    };
+}
+
 /// A position represented as two u4 integers for easier calculations.
 /// 1-10 for both coordinates, 0 is not a valid value!
 pub const IntPosition = struct { u4, u4 };
@@ -288,7 +329,7 @@ pub const HorizontalMove = struct {
         const end_x = self.to_x;
         const start_y = self.y;
         if (self.is_block()) {
-            const block_y = start_y.plus(self.block_height);
+            const block_y = start_y.plus(@intFromEnum(self.block_height));
             _ = try writer.print("▢{f}{d}{d}-{f}{d}{d}", .{
                 start_x,
                 start_y,
@@ -323,7 +364,7 @@ pub const VerticalMove = struct {
         const start_y = self.from_y;
         const end_y = self.to_y;
         if (self.is_block()) {
-            const block_x = start_x.plus(self.block_width);
+            const block_x = start_x.plus(@intFromEnum(self.block_width));
             _ = try writer.print("{s}{f}{f}{d}-{f}{f}{d}", .{
                 block_sigil,
                 start_x,

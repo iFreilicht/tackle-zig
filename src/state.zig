@@ -12,6 +12,9 @@ const ColumnX = notation.ColumnX;
 const RowY = notation.RowY;
 const Position = notation.Position;
 const Move = notation.Move;
+const BlockSize = notation.BlockSize;
+const Direction = notation.Direction;
+const move_position = notation.move_position;
 
 pub const Player = enum(u2) { white = 1, black = 2 };
 pub const PieceColor = enum(u2) { white = 1, black = 2, gold = 3 };
@@ -25,9 +28,75 @@ pub const SquareContent = enum(u2) {
         return @enumFromInt(@intFromEnum(c));
     }
 };
+
+pub const Block = struct {
+    lower_left_corner: Position,
+    /// Width in columns. 0 is not a valid value!
+    width: u4,
+    /// Height in rows. 0 is not a valid value!
+    height: u4,
+
+    pub fn init(corner1: Position, corner2: Position) Block {
+        const min_col = corner1.@"0".min(corner2.@"0");
+        const max_col = corner1.@"0".max(corner2.@"0");
+        const min_row = corner1.@"1".min(corner2.@"1");
+        const max_row = corner1.@"1".max(corner2.@"1");
+
+        return Block{
+            .lower_left_corner = Position{ min_col, min_row },
+            .width = @intFromEnum(max_col) - @intFromEnum(min_col) + 1,
+            .height = @intFromEnum(max_row) - @intFromEnum(min_row) + 1,
+        };
+    }
+
+    /// Return a list of all positions covered by this block, in column-major order,
+    /// ordered from the front of the block to the back. The front is defined as the
+    /// side which the block is moving towards.
+    /// This does not check whether the block is actually allowed to move in that direction!
+    pub fn to_list(self: *const Block, buffer: []Position, direction: Direction) []Position {
+        var index: usize = 0;
+
+        for (0..self.width) |dx| {
+            for (0..self.height) |dy| {
+                var dx_corrected = dx;
+                var dy_corrected = dy;
+                switch (direction) {
+                    // When moving down, the front is the bottom side, so we order row from bottom
+                    // to top. Nothing to do in that case, that is the default iteration order.
+                    .down => {},
+                    // When moving up, the front is the top side, so we order rows from top to bottom.
+                    // The order of the columns is irrelevant.
+                    .up => {
+                        dy_corrected = self.height - dy - 1;
+                    },
+                    // When moving left, the front is the left side, so we order columns from left
+                    // to right. Nothing to do in that case, that is the default iteration order.
+                    .left => {},
+                    // When moving right, the front is the right side, so we order columns from right
+                    // to left. The order of the rows is irrelevant.
+                    .right => {
+                        dx_corrected = self.width - dx - 1;
+                    },
+                }
+                buffer[index] = Position{
+                    @enumFromInt(@intFromEnum(self.lower_left_corner.@"0") + dx_corrected),
+                    @enumFromInt(@intFromEnum(self.lower_left_corner.@"1") + dy_corrected),
+                };
+                index += 1;
+            }
+        }
+
+        return buffer[0..index];
+    }
+};
+
 pub const Board = struct {
-    /// Board squares in column-major order. Be careful! Use `index`!
-    squares: [board_size * board_size]SquareContent = .{.empty} ** (board_size * board_size),
+    const Squares = [board_size * board_size]SquareContent;
+
+    /// Board squares in column-major order. Be careful! Use `index` to convert
+    /// positions to indices that can be used here and update all other fields
+    /// whenever you modify this array!
+    squares: Squares = .{.empty} ** (board_size * board_size),
     /// Indices of white pieces on the board for fast iteration
     white_pieces: [max_pieces_per_player]u8 = undefined,
     /// Indices of black pieces on the board for fast iteration
@@ -108,41 +177,108 @@ pub const Board = struct {
         self.squares[idx] = .empty;
     }
 
+    /// Return a new Squares array with the piece moved from one index to another.
+    /// It might seem VERY inefficient to copy the entire array just to move a single piece,
+    /// especially when we need to do this multiple times in a row when moving blocks of pieces.
+    /// However, this allows us to move all pieces in a block first to check for errors without
+    /// modifying the original board state, and only commit the changes once all moves have
+    /// succeeded.
+    /// For now, we trust that the Zig compiler will optimize away the copying as much as possible
+    /// until we have proper profiling data to prove otherwise.
+    /// This is a low-level function that only checks for data invariants, not game rules.
+    /// TODO: But maybe it should also check for collisions along the path?
+    fn move_piece(squares: Squares, idx_from: u8, idx_to: u8) !Squares {
+        var new_squares = squares;
+        switch (new_squares[idx_from]) {
+            .empty => return error.SquareEmpty,
+            .gold => return error.MovingGoldNotAllowed,
+            .white, .black => {},
+        }
+
+        if (new_squares[idx_to] != .empty) return error.SquareOccupied;
+
+        new_squares[idx_to] = new_squares[idx_from];
+        new_squares[idx_from] = .empty;
+        return new_squares;
+    }
+
+    /// Update the position of a piece in the relevant array after it has been moved.
+    /// Will crash if `self.squares[new_idx]` is `.empty` or `.gold`; if those were moved, our data invariants
+    /// are already broken and can't be reconciled.
+    fn update_piece_position(self: *Board, old_idx: u8, new_idx: u8) void {
+        const content = self.squares[new_idx];
+        switch (content) {
+            .white => {
+                for (0..self.white_count) |i| {
+                    if (self.white_pieces[i] == old_idx) {
+                        self.white_pieces[i] = new_idx;
+                    }
+                }
+            },
+            .black => {
+                for (0..self.black_count) |i| {
+                    if (self.black_pieces[i] == old_idx) {
+                        self.black_pieces[i] = new_idx;
+                    }
+                }
+            },
+            .gold, .empty => unreachable,
+        }
+    }
+
     /// Move a single piece from one position to another. This is a low-level
     /// function that only checks for data invariants, not game rules.
     pub fn move_single_piece(self: *Board, from: Position, to: Position) !void {
         const idx_from = index(from);
         const idx_to = index(to);
 
-        switch (self.squares[idx_from]) {
-            .empty => return error.SquareEmpty,
-            .gold => return error.MovingGoldNotAllowed,
-            .white, .black => {},
+        // Update squares array
+        self.squares = try Board.move_piece(self.squares, idx_from, idx_to);
+
+        // Update piece position in the relevant lookup array
+        self.update_piece_position(idx_from, idx_to);
+    }
+
+    /// Try to move all pieces at the given start positions in the specified direction and distance.
+    /// This only checks for data invariants, not game rules.
+    /// The positions must be provided in the order the pieces will be moved in, so the pieces at the
+    /// front of the pushed block must come first and the rear pieces of the moving block last.
+    fn move_many_pieces(squares: Squares, start_positions: []Position, direction: Direction, distance: u4) !Squares {
+        var working_squares = squares;
+        for (0..start_positions.len) |i| {
+            const pos = start_positions[i];
+            const target_pos = move_position(pos, direction, distance);
+            working_squares = try Board.move_piece(working_squares, index(pos), index(target_pos));
         }
+        return working_squares;
+    }
 
-        if (self.squares[idx_to] != .empty) return error.SquareOccupied;
+    pub fn move_blocks(self: *Board, moved_block: Block, pushed_block: ?Block, direction: Direction, distance: u4) !void {
+        // The absolute maximum number of positions we might need to move is 16+12=28,
+        // because the biggest block is 4x4=16 and the biggest block it can push is 3x4=12.
+        var start_positions_buffer: [4 * 4 + 3 * 4]Position = undefined;
+        var working_squares = self.squares;
 
-        self.squares[idx_to] = self.squares[idx_from];
-        self.squares[idx_from] = .empty;
+        // Determine start positions of pushed block first so it gets moved out of the way
+        const start_positions_pushed = if (pushed_block) |pb|
+            pb.to_list(&start_positions_buffer, direction)
+        else
+            start_positions_buffer[0..0];
 
-        // Update piece position in the relevant array
-        const color = self.squares[idx_to];
-        switch (color) {
-            .white => {
-                for (0..self.white_count) |i| {
-                    if (self.white_pieces[i] == idx_from) {
-                        self.white_pieces[i] = idx_to;
-                    }
-                }
-            },
-            .black => {
-                for (0..self.black_count) |i| {
-                    if (self.black_pieces[i] == idx_from) {
-                        self.black_pieces[i] = idx_to;
-                    }
-                }
-            },
-            .gold, .empty => unreachable,
+        // Determine start positions of moved block
+        const remaining_buffer = start_positions_buffer[start_positions_pushed.len..];
+        const start_positions_moved = moved_block.to_list(remaining_buffer, direction);
+
+        // Combine both slices and move all pieces
+        const start_positions = start_positions_buffer[0..(start_positions_pushed.len + start_positions_moved.len)];
+        working_squares = try Board.move_many_pieces(working_squares, start_positions, direction, distance);
+
+        // Commit the changes to self.squares and update piece positions in lookup arrays
+        self.squares = working_squares;
+        for (0..start_positions.len) |i| {
+            const pos = start_positions[i];
+            const target_pos = move_position(pos, direction, distance);
+            self.update_piece_position(index(pos), index(target_pos));
         }
     }
 
@@ -293,6 +429,104 @@ pub fn move_piece(board: *Board, player: Player, move: Move) !void {
             try board.move_single_piece(start, end);
         },
     }
+}
+
+test "block init" {
+    const block = Block.init(.{ .C, ._7 }, .{ .D, ._4 });
+    try expectEqual(.{ .C, ._4 }, block.lower_left_corner);
+    try expectEqual(2, block.width);
+    try expectEqual(4, block.height);
+
+    const block2 = Block.init(.{ .H, ._2 }, .{ .F, ._5 });
+    try expectEqual(.{ .F, ._2 }, block2.lower_left_corner);
+    try expectEqual(3, block2.width);
+    try expectEqual(4, block2.height);
+
+    const block3 = Block.init(.{ .A, ._1 }, .{ .A, ._2 });
+    try expectEqual(.{ .A, ._1 }, block3.lower_left_corner);
+    try expectEqual(1, block3.width);
+    try expectEqual(2, block3.height);
+}
+
+test "block to_list" {
+    const block = Block.init(.{ .B, ._2 }, .{ .D, ._4 });
+    var buffer: [9]Position = undefined;
+    const positions = block.to_list(&buffer, .up);
+    const expected: [9]Position = .{
+        .{ .B, ._4 },
+        .{ .B, ._3 },
+        .{ .B, ._2 },
+        .{ .C, ._4 },
+        .{ .C, ._3 },
+        .{ .C, ._2 },
+        .{ .D, ._4 },
+        .{ .D, ._3 },
+        .{ .D, ._2 },
+    };
+    try expectEqualSlices(Position, &expected, positions);
+
+    const positions2 = block.to_list(&buffer, .right);
+    const expected2: [9]Position = .{
+        .{ .D, ._2 },
+        .{ .D, ._3 },
+        .{ .D, ._4 },
+        .{ .C, ._2 },
+        .{ .C, ._3 },
+        .{ .C, ._4 },
+        .{ .B, ._2 },
+        .{ .B, ._3 },
+        .{ .B, ._4 },
+    };
+    try expectEqualSlices(Position, &expected2, positions2);
+
+    const positions3 = block.to_list(&buffer, .down);
+    const expected3: [9]Position = .{
+        .{ .B, ._2 },
+        .{ .B, ._3 },
+        .{ .B, ._4 },
+        .{ .C, ._2 },
+        .{ .C, ._3 },
+        .{ .C, ._4 },
+        .{ .D, ._2 },
+        .{ .D, ._3 },
+        .{ .D, ._4 },
+    };
+    try expectEqualSlices(Position, &expected3, positions3);
+
+    const positions4 = block.to_list(&buffer, .left);
+    const expected4: [9]Position = .{
+        .{ .B, ._2 },
+        .{ .B, ._3 },
+        .{ .B, ._4 },
+        .{ .C, ._2 },
+        .{ .C, ._3 },
+        .{ .C, ._4 },
+        .{ .D, ._2 },
+        .{ .D, ._3 },
+        .{ .D, ._4 },
+    };
+    try expectEqualSlices(Position, &expected4, positions4);
+}
+
+test "move blocks" {
+    var board: Board = .{};
+
+    try board.place_piece(.white, .{ .B, ._5 });
+    try board.place_piece(.white, .{ .C, ._5 });
+    try board.place_piece(.black, .{ .E, ._5 });
+    try board.place_piece(.black, .{ .F, ._5 });
+
+    const moved_block = Block.init(.{ .B, ._5 }, .{ .C, ._5 });
+    const pushed_block = Block.init(.{ .E, ._5 }, .{ .F, ._5 });
+
+    try board.move_blocks(moved_block, pushed_block, .right, 2);
+
+    try expectEqual(.empty, board.get_square(.{ .B, ._5 }));
+    try expectEqual(.empty, board.get_square(.{ .C, ._5 }));
+    try expectEqual(.white, board.get_square(.{ .D, ._5 }));
+    try expectEqual(.white, board.get_square(.{ .E, ._5 }));
+    try expectEqual(.black, board.get_square(.{ .G, ._5 }));
+    try expectEqual(.black, board.get_square(.{ .H, ._5 }));
 }
 
 test "place pieces" {

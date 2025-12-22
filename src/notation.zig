@@ -255,11 +255,53 @@ pub fn is_in_core(position: Position) bool {
 /// to the side that is 5 units wide, the block would have to contain 25 pieces.
 /// However, a maximum of 18 pieces can be placed per player, so a block of 5 is impossible.
 /// A block of 4 is also unlikely to happen in regular play, but still possible in theory.
-pub const BlockSize = enum(u2) { no_block = 0, _2 = 1, _3 = 2, _4 = 3 };
+pub const BlockSize = enum(u2) {
+    no_block = 0,
+    _2 = 1,
+    _3 = 2,
+    _4 = 3,
+
+    /// Return the strength of this block size (number of pieces in the block).
+    pub fn to_block_strength(self: @This()) u4 {
+        return @intFromEnum(self) + 1;
+    }
+};
 
 /// A position on the board, identified by its column and row.
 pub const Position = struct { ColumnX, RowY };
 
+/// Move the given position in the given direction by the given distance,
+/// if possible (i.e. if it stays within the board boundaries).
+/// Return null if the move would go out of bounds.
+pub fn move_position_if_possible(pos: Position, direction: Direction, distance: u4) ?Position {
+    if (distance == 0) return pos;
+    if (distance > 9) return null; // Maximum distance on 10x10 board is 9
+    const col, const row = pos;
+    var new_pos: Position = undefined;
+    switch (direction) {
+        .up => {
+            if (@intFromEnum(RowY._10) - distance < @intFromEnum(row)) return null;
+            new_pos = .{ col, row.plus(distance) };
+        },
+        .down => {
+            if (@intFromEnum(RowY._1) + distance > @intFromEnum(row)) return null;
+            new_pos = .{ col, row.minus(distance) };
+        },
+        .left => {
+            if (@intFromEnum(ColumnX.A) + distance > @intFromEnum(col)) return null;
+            new_pos = .{ col.minus(distance), row };
+        },
+        .right => {
+            if (@intFromEnum(ColumnX.J) - distance < @intFromEnum(col)) return null;
+            new_pos = .{ col.plus(distance), row };
+        },
+    }
+    return new_pos;
+}
+
+/// Move the given position in the given direction by the given distance.
+/// Assumes that the move is possible (i.e. stays within the board boundaries),
+/// performed checks depend on Zig's build mode.
 pub fn move_position(pos: Position, direction: Direction, distance: u4) Position {
     const col, const row = pos;
     return switch (direction) {
@@ -687,6 +729,31 @@ const TurnParser = struct {
         };
     }
 };
+
+test "move position if possible" {
+    const pos: Position = .{ .D, ._8 };
+    try std.testing.expectEqual(.{ .D, ._9 }, move_position_if_possible(pos, .up, 1) orelse unreachable);
+    try std.testing.expectEqual(.{ .D, ._10 }, move_position_if_possible(pos, .up, 2) orelse unreachable);
+    try std.testing.expectEqual(.{ .D, ._4 }, move_position_if_possible(pos, .down, 4) orelse unreachable);
+    try std.testing.expectEqual(.{ .D, ._1 }, move_position_if_possible(pos, .down, 7) orelse unreachable);
+    try std.testing.expectEqual(.{ .B, ._8 }, move_position_if_possible(pos, .left, 2) orelse unreachable);
+    try std.testing.expectEqual(.{ .A, ._8 }, move_position_if_possible(pos, .left, 3) orelse unreachable);
+    try std.testing.expectEqual(.{ .I, ._8 }, move_position_if_possible(pos, .right, 5) orelse unreachable);
+    try std.testing.expectEqual(.{ .J, ._8 }, move_position_if_possible(pos, .right, 6) orelse unreachable);
+    try std.testing.expect(move_position_if_possible(pos, .up, 3) == null);
+    try std.testing.expect(move_position_if_possible(pos, .down, 8) == null);
+    try std.testing.expect(move_position_if_possible(pos, .left, 4) == null);
+    try std.testing.expect(move_position_if_possible(pos, .right, 7) == null);
+
+    const pos2: Position = .{ .A, ._1 };
+    try std.testing.expectEqual(.{ .A, ._1 }, move_position_if_possible(pos2, .up, 0) orelse unreachable);
+    try std.testing.expectEqual(.{ .A, ._10 }, move_position_if_possible(pos2, .up, 9) orelse unreachable);
+    try std.testing.expectEqual(.{ .J, ._1 }, move_position_if_possible(pos2, .right, 9) orelse unreachable);
+
+    const pos3: Position = .{ .J, ._10 };
+    try std.testing.expectEqual(.{ .J, ._1 }, move_position_if_possible(pos3, .down, 9) orelse unreachable);
+    try std.testing.expectEqual(.{ .A, ._10 }, move_position_if_possible(pos3, .left, 9) orelse unreachable);
+}
 
 test "format horizontal simple move" {
     const turn: Turn = .{

@@ -1,14 +1,19 @@
 const std = @import("std");
+
+const board_module = @import("board.zig");
 const constants = @import("constants.zig");
-const state = @import("state.zig");
 const notation = @import("notation.zig");
-const Board = state.Board;
-const RowY = notation.RowY;
-const ColumnX = notation.ColumnX;
-const Position = notation.Position;
+const position_module = @import("position.zig");
+const state = @import("state.zig");
+
 const board_size = constants.board_size;
 const max_job_size = constants.max_job_size;
 const column_letters = constants.column_letters;
+
+const Board = board_module.Board;
+const RowY = position_module.RowY;
+const ColumnX = position_module.ColumnX;
+const Position = position_module.Position;
 
 const corner_tl: []const u8 = "╭";
 const corner_bl: []const u8 = "╰";

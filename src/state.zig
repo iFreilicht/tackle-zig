@@ -267,19 +267,21 @@ pub const Board = struct {
     }
 
     /// A list that describes how far one column or row shall or can move in a certain direction
-    /// before being blocked by an opponent's piece or gold piece, and the position of all pieces
-    /// that would need to be moved in order to perform that move.
+    /// before being blocked by an opponent's piece or gold piece, the length of that block in
+    /// the movement direction and the position of all pieces that would need to be moved in order to
+    /// perform that move.
     /// A move of a block with a height or width greater than 1 consists of multiple such move lists.
     pub const MoveList = struct {
         distance: u4,
-        block_strength: u4,
+        /// This is also called "block strength" in the game rules
+        block_length: u4,
         positions: []const Position,
     };
 
     pub fn get_max_move_list(self: *const Board, start: Position, direction: Direction, position_buffer: []Position) MoveList {
         var distance: u4 = 0;
         var current_pos = start;
-        const EMPTY = MoveList{ .distance = 0, .block_strength = 0, .positions = position_buffer[0..0] };
+        const EMPTY = MoveList{ .distance = 0, .block_length = 0, .positions = position_buffer[0..0] };
 
         const start_content = self.squares[index(current_pos)];
         const start_color: PieceColor = switch (start_content) {
@@ -337,7 +339,7 @@ pub const Board = struct {
 
         return .{
             .distance = distance,
-            .block_strength = block_strength,
+            .block_length = block_strength,
             .positions = position_buffer[0..pos_index],
         };
     }
@@ -449,7 +451,7 @@ fn validate_color(player: Player, color: SquareContent) !void {
 pub fn execute_move(board: *Board, player: Player, move: Move) !void {
     switch (move) {
         .diagonal => |d| {
-            const start = d.to_start();
+            const start = d.start();
             const content = board.get_square(start);
             try validate_color(player, content);
 
@@ -459,21 +461,18 @@ pub fn execute_move(board: *Board, player: Player, move: Move) !void {
                 if (!board.is_square_empty(position)) return error.PathBlocked;
             }
 
-            const end = d.to_end();
+            const end = d.end();
             try board.move_single_piece(start, end);
         },
-        .horizontal => |h| {
-            const start = Position{ h.from_x, h.y };
+        inline .horizontal, .vertical => |m| {
+            const start = m.start();
             const content = board.get_square(start);
             try validate_color(player, content);
 
-            const direction = if (@intFromEnum(h.from_x) < @intFromEnum(h.to_x)) Direction.right else Direction.left;
-            const distance = h.from_x.distance(h.to_x);
+            const direction = m.direction();
+            const distance = m.distance();
 
-            const block_rear_edge = Block.init(
-                Position{ h.from_x, h.y },
-                Position{ h.from_x, h.y.plus(@intFromEnum(h.block_height)) },
-            );
+            const block_rear_edge = Block.init(m.start(), m.start_block_end());
             var rear_position_buffer: [4]Position = undefined;
             const positions = block_rear_edge.to_list(&rear_position_buffer, direction);
 
@@ -481,7 +480,7 @@ pub fn execute_move(board: *Board, player: Player, move: Move) !void {
             // because the biggest block is 4x4=16 and the biggest block it can push is 3x4=12.
             var start_positions_buffer: [4 * 4 + 3 * 4]Position = undefined;
             var pos_index: usize = 0;
-            var block_width: u4 = 0;
+            var block_length: u4 = 0;
             for (positions) |pos| {
                 const move_list = board.get_max_move_list(
                     pos,
@@ -490,34 +489,21 @@ pub fn execute_move(board: *Board, player: Player, move: Move) !void {
                 );
                 if (distance > move_list.distance) return error.PathBlocked;
                 pos_index += move_list.positions.len;
-                if (block_width == 0) {
-                    block_width = move_list.block_strength;
-                } else if (block_width != move_list.block_strength) {
+                if (block_length == 0) {
+                    block_length = move_list.block_length;
+                } else if (block_length != move_list.block_length) {
                     // The block must be rectangular, so all move lists must have the same block strength
                     return error.InvalidBlockShape;
                 }
             }
 
-            if (block_width < h.block_height.to_block_strength()) {
+            if (block_length < m.block_breadth()) {
                 return error.BlockCannotMoveSideways;
             }
 
             // TODO: Implement worm moves
 
             try board.move_many_pieces(start_positions_buffer[0..pos_index], direction, distance);
-        },
-        .vertical => |v| {
-            const start = Position{ v.x, v.from_y };
-            const content = board.get_square(start);
-            try validate_color(player, content);
-
-            // TODO: Check for obstructions
-            // TODO: Handle block height
-            // TODO: Implement pushing logic
-            // TODO: Implement worm moves
-
-            const end = Position{ v.x, v.to_y };
-            try board.move_single_piece(start, end);
         },
     }
 }
@@ -718,7 +704,7 @@ test "get max move list single piece up" {
     const move_list = board.get_max_move_list(.{ .C, ._5 }, .up, &position_buffer);
     try expectEqualDeep(Board.MoveList{
         .distance = 5,
-        .block_strength = 1,
+        .block_length = 1,
         .positions = &[_]Position{.{ .C, ._5 }},
     }, move_list);
 }
@@ -736,7 +722,7 @@ test "get max move list pushing opponent down" {
     const move_list = board.get_max_move_list(.{ .E, ._9 }, .down, &position_buffer);
     try expectEqualDeep(Board.MoveList{
         .distance = 4,
-        .block_strength = 3,
+        .block_length = 3,
         .positions = &[_]Position{
             .{ .E, ._9 },
             .{ .E, ._8 },
@@ -759,7 +745,7 @@ test "get max move list pushing opponent right blocked by own piece" {
     const move_list = board.get_max_move_list(.{ .A, ._4 }, .right, &position_buffer);
     try expectEqualDeep(Board.MoveList{
         .distance = 3,
-        .block_strength = 2,
+        .block_length = 2,
         .positions = &[_]Position{
             .{ .A, ._4 },
             .{ .B, ._4 },
@@ -781,7 +767,7 @@ test "get max move list pushing opponent left blocked by opponent piece" {
     const move_list = board.get_max_move_list(.{ .I, ._2 }, .left, &position_buffer);
     try expectEqualDeep(Board.MoveList{
         .distance = 1,
-        .block_strength = 3,
+        .block_length = 3,
         .positions = &[_]Position{
             .{ .I, ._2 },
             .{ .H, ._2 },
@@ -800,7 +786,7 @@ test "get max move list for gold piece and empty square" {
     const move_list_gold = board.get_max_move_list(.{ .E, ._5 }, .up, &position_buffer);
     const expected_move_list = Board.MoveList{
         .distance = 0,
-        .block_strength = 0,
+        .block_length = 0,
         .positions = &[_]Position{},
     };
     try expectEqualDeep(expected_move_list, move_list_gold);
@@ -1015,4 +1001,80 @@ test "execute move horizontally with block cannot move sideways error" {
 
     try expectEqual(.white, board.get_square(.{ .B, ._5 }));
     try expectEqual(.white, board.get_square(.{ .B, ._6 }));
+}
+
+test "execute move vertically with 3x2 block pushing 2 irregular pieces" {
+    var board: Board = .{};
+
+    try board.place_piece(.black, .{ .F, ._8 });
+    try board.place_piece(.black, .{ .G, ._8 });
+    try board.place_piece(.black, .{ .F, ._9 });
+    try board.place_piece(.black, .{ .G, ._9 });
+    try board.place_piece(.black, .{ .F, ._10 });
+    try board.place_piece(.black, .{ .G, ._10 });
+    try board.place_piece(.white, .{ .F, ._7 });
+    try board.place_piece(.white, .{ .G, ._7 });
+    try board.place_piece(.white, .{ .F, ._6 });
+
+    const move = Move{ .vertical = notation.VerticalMove{
+        .from_y = ._10,
+        .to_y = ._5,
+        .x = .F,
+        .block_width = ._2,
+    } };
+    try execute_move(&board, .black, move);
+
+    try expectEqual(.empty, board.get_square(.{ .F, ._10 }));
+    try expectEqual(.empty, board.get_square(.{ .G, ._10 }));
+    try expectEqual(.empty, board.get_square(.{ .F, ._9 }));
+    try expectEqual(.empty, board.get_square(.{ .G, ._9 }));
+    try expectEqual(.empty, board.get_square(.{ .F, ._8 }));
+    try expectEqual(.empty, board.get_square(.{ .G, ._8 }));
+    try expectEqual(.black, board.get_square(.{ .F, ._5 }));
+    try expectEqual(.black, board.get_square(.{ .G, ._5 }));
+    try expectEqual(.black, board.get_square(.{ .F, ._4 }));
+    try expectEqual(.black, board.get_square(.{ .G, ._4 }));
+    try expectEqual(.black, board.get_square(.{ .F, ._3 }));
+    try expectEqual(.black, board.get_square(.{ .G, ._3 }));
+    try expectEqual(.white, board.get_square(.{ .F, ._2 }));
+    try expectEqual(.white, board.get_square(.{ .G, ._2 }));
+    try expectEqual(.white, board.get_square(.{ .F, ._1 }));
+}
+
+test "execute move vertically with invalid block shape error" {
+    var board: Board = .{};
+
+    try board.place_piece(.black, .{ .H, ._8 });
+    try board.place_piece(.black, .{ .H, ._9 });
+    try board.place_piece(.black, .{ .I, ._9 });
+
+    const move = Move{ .vertical = notation.VerticalMove{
+        .from_y = ._9,
+        .to_y = ._6,
+        .x = .H,
+        .block_width = ._2,
+    } };
+    try expectError(error.InvalidBlockShape, execute_move(&board, .black, move));
+
+    try expectEqual(.black, board.get_square(.{ .H, ._8 }));
+    try expectEqual(.black, board.get_square(.{ .H, ._9 }));
+    try expectEqual(.black, board.get_square(.{ .I, ._9 }));
+}
+
+test "execute move vertically with block cannot move sideways error" {
+    var board: Board = .{};
+
+    try board.place_piece(.black, .{ .D, ._8 });
+    try board.place_piece(.black, .{ .E, ._8 });
+
+    const move = Move{ .vertical = notation.VerticalMove{
+        .from_y = ._8,
+        .to_y = ._6,
+        .x = .D,
+        .block_width = ._2,
+    } };
+    try expectError(error.BlockCannotMoveSideways, execute_move(&board, .black, move));
+
+    try expectEqual(.black, board.get_square(.{ .D, ._8 }));
+    try expectEqual(.black, board.get_square(.{ .E, ._8 }));
 }

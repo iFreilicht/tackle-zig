@@ -352,6 +352,91 @@ pub const Board = struct {
     pub fn is_square_empty(self: *const Board, position: Position) bool {
         return self.get_square(position) == .empty;
     }
+
+    /// Check whether the board has exactly the specified pieces in the specified positions.
+    /// Also checks that the internal data invariants are upheld.
+    /// This function is mostly useful for testing.
+    pub fn check_contents_match(self: *const Board, white_pieces: []const Position, black_pieces: []const Position, gold_piece: ?Position) !void {
+        // Fail fast if counts don't match
+        if (self.white_count != white_pieces.len) return error.WhiteCountDiffers;
+        if (self.black_count != black_pieces.len) return error.BlackCountDiffers;
+
+        // Check whether all pieces are in the expected positions
+        for (white_pieces) |pos| {
+            const idx = index(pos);
+            if (self.squares[idx] != .white) return error.SquareDoesNotContainWhitePiece;
+        }
+
+        for (black_pieces) |pos| {
+            const idx = index(pos);
+            if (self.squares[idx] != .black) return error.SquareDoesNotContainBlackPiece;
+        }
+
+        if (gold_piece) |gp| {
+            const idx = index(gp);
+            if (self.squares[idx] != .gold) return error.SquareDoesNotContainGoldPiece;
+        }
+
+        // Ensure that the data invariants are upheld
+        var white_count: u8 = 0;
+        var white_positions: [board_size * board_size]u8 = undefined;
+        var black_count: u8 = 0;
+        var black_positions: [board_size * board_size]u8 = undefined;
+        var gold_count: u8 = 0;
+        var gold_positions: [board_size * board_size]u8 = undefined;
+        for (self.squares, 0..) |content, idx| {
+            switch (content) {
+                .white => {
+                    white_positions[white_count] = @intCast(idx);
+                    white_count += 1;
+                },
+                .black => {
+                    black_positions[black_count] = @intCast(idx);
+                    black_count += 1;
+                },
+                .gold => {
+                    gold_positions[gold_count] = @intCast(idx);
+                    gold_count += 1;
+                },
+                .empty => {},
+            }
+        }
+
+        const board_white_pieces = self.white_pieces[0..self.white_count];
+        const found_white_pieces = white_positions[0..white_count];
+        if (white_count != self.white_count) return error.WhiteCountInvariantBroken;
+        for (found_white_pieces) |idx| {
+            if (!std.mem.containsAtLeastScalar(u8, board_white_pieces, 1, idx)) {
+                return error.WhitePositionsInvariantBroken;
+            }
+        }
+        for (board_white_pieces) |idx| {
+            if (!std.mem.containsAtLeastScalar(u8, found_white_pieces, 1, idx)) {
+                return error.WhitePositionsInvariantBroken;
+            }
+        }
+
+        const board_black_pieces = self.black_pieces[0..self.black_count];
+        const found_black_pieces = black_positions[0..black_count];
+        if (black_count != self.black_count) return error.BlackCountInvariantBroken;
+        for (found_black_pieces) |idx| {
+            if (!std.mem.containsAtLeastScalar(u8, board_black_pieces, 1, idx)) {
+                return error.BlackPositionsInvariantBroken;
+            }
+        }
+        for (board_black_pieces) |idx| {
+            if (!std.mem.containsAtLeastScalar(u8, found_black_pieces, 1, idx)) {
+                return error.BlackPositionsInvariantBroken;
+            }
+        }
+
+        if (gold_count > 1) return error.GoldCountInvariantBroken;
+        if (gold_count == 1) {
+            if (self.gold_piece != gold_positions[0]) return error.GoldPositionInvariantBroken;
+        } else {
+            if (self.gold_piece != GOLD_EMPTY) return error.GoldPieceNotEmpty;
+        }
+    }
 };
 
 pub const JobRequirement = enum { piece, empty, any };
@@ -508,6 +593,124 @@ pub fn execute_move(board: *Board, player: Player, move: Move) !void {
     }
 }
 
+test "check contents match" {
+    var board: Board = .{};
+
+    try board.place_piece(.white, .{ .A, ._1 });
+    try board.place_piece(.white, .{ .J, ._2 });
+    try board.place_piece(.black, .{ .A, ._4 });
+    try board.place_piece(.black, .{ .F, ._3 });
+    try board.place_piece(.gold, .{ .E, ._5 });
+
+    const white_positions: [2]Position = .{ .{ .A, ._1 }, .{ .J, ._2 } };
+    const black_positions: [2]Position = .{ .{ .A, ._4 }, .{ .F, ._3 } };
+    const gold_position: Position = .{ .E, ._5 };
+
+    try board.check_contents_match(&white_positions, &black_positions, gold_position);
+
+    // Test for all the errors that can occur. These follow the same order that the
+    // expected errors are returned in in the function under test to make it easier
+    // to verify that all cases are covered.
+
+    // Remove white piece without breaking invariants
+    var broken_board1 = board;
+    try broken_board1.remove_piece(.{ .A, ._1 });
+    try expectError(
+        error.WhiteCountDiffers,
+        broken_board1.check_contents_match(&white_positions, &black_positions, gold_position),
+    );
+
+    // Remove black piece without breaking invariants
+    var broken_board2 = board;
+    try broken_board2.remove_piece(.{ .F, ._3 });
+    try expectError(
+        error.BlackCountDiffers,
+        broken_board2.check_contents_match(&white_positions, &black_positions, gold_position),
+    );
+
+    // Move white piece without breaking invariants
+    var broken_board3 = board;
+    try broken_board3.move_single_piece(.{ .A, ._1 }, .{ .B, ._1 });
+    try expectError(
+        error.SquareDoesNotContainWhitePiece,
+        broken_board3.check_contents_match(&white_positions, &black_positions, gold_position),
+    );
+
+    // Move black piece without breaking invariants
+    var broken_board4 = board;
+    try broken_board4.move_single_piece(.{ .F, ._3 }, .{ .F, ._4 });
+    try expectError(
+        error.SquareDoesNotContainBlackPiece,
+        broken_board4.check_contents_match(&white_positions, &black_positions, gold_position),
+    );
+
+    // Move gold piece without breaking invariants
+    var broken_board5 = board;
+    broken_board5.squares[Board.index(.{ .E, ._5 })] = .empty;
+    broken_board5.squares[Board.index(.{ .E, ._6 })] = .gold;
+    broken_board5.gold_piece = Board.index(.{ .E, ._6 });
+    try expectError(
+        error.SquareDoesNotContainGoldPiece,
+        broken_board5.check_contents_match(&white_positions, &black_positions, gold_position),
+    );
+
+    // Add white piece so the count is incorrect
+    var broken_board6 = board;
+    broken_board6.squares[Board.index(.{ .C, ._1 })] = .white;
+    try expectError(
+        error.WhiteCountInvariantBroken,
+        broken_board6.check_contents_match(&white_positions, &black_positions, gold_position),
+    );
+
+    // Modify white piece positions so it's inconsistent with the squares array
+    var broken_board7 = board;
+    broken_board7.white_pieces[0] = Board.index(.{ .C, ._1 });
+    try expectError(
+        error.WhitePositionsInvariantBroken,
+        broken_board7.check_contents_match(&white_positions, &black_positions, gold_position),
+    );
+
+    // Add black piece so the count is incorrect
+    var broken_board8 = board;
+    broken_board8.squares[Board.index(.{ .G, ._3 })] = .black;
+    try expectError(
+        error.BlackCountInvariantBroken,
+        broken_board8.check_contents_match(&white_positions, &black_positions, gold_position),
+    );
+
+    // Modify black piece positions so it's inconsistent with the squares array
+    var broken_board9 = board;
+    broken_board9.black_pieces[0] = Board.index(.{ .G, ._3 });
+    try expectError(
+        error.BlackPositionsInvariantBroken,
+        broken_board9.check_contents_match(&white_positions, &black_positions, gold_position),
+    );
+
+    // Add second gold piece
+    var broken_board10 = board;
+    broken_board10.squares[Board.index(.{ .E, ._6 })] = .gold;
+    try expectError(
+        error.GoldCountInvariantBroken,
+        broken_board10.check_contents_match(&white_positions, &black_positions, gold_position),
+    );
+
+    // Modify gold piece position so it's inconsistent with the gold_piece field
+    var broken_board11 = board;
+    broken_board11.gold_piece = Board.index(.{ .E, ._6 });
+    try expectError(
+        error.GoldPositionInvariantBroken,
+        broken_board11.check_contents_match(&white_positions, &black_positions, gold_position),
+    );
+
+    // Remove gold piece from board but not from gold_piece field
+    var broken_board12 = board;
+    broken_board12.squares[Board.index(.{ .E, ._5 })] = .empty;
+    try expectError(
+        error.GoldPieceNotEmpty,
+        broken_board12.check_contents_match(&white_positions, &black_positions, null),
+    );
+}
+
 test "block init" {
     const block = Block.init(.{ .C, ._7 }, .{ .D, ._4 });
     try expectEqual(.{ .C, ._4 }, block.lower_left_corner);
@@ -602,12 +805,11 @@ test "move many pieces horizontal right" {
 
     try board.move_many_pieces(start_positions[0..4], .right, 2);
 
-    try expectEqual(.empty, board.get_square(.{ .B, ._5 }));
-    try expectEqual(.empty, board.get_square(.{ .C, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .D, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .E, ._5 }));
-    try expectEqual(.black, board.get_square(.{ .G, ._5 }));
-    try expectEqual(.black, board.get_square(.{ .H, ._5 }));
+    try board.check_contents_match(
+        &.{ .{ .D, ._5 }, .{ .E, ._5 } },
+        &.{ .{ .G, ._5 }, .{ .H, ._5 } },
+        null,
+    );
 }
 
 test "move many pieces horizontal left" {
@@ -627,14 +829,11 @@ test "move many pieces horizontal left" {
 
     try board.move_many_pieces(start_positions[0..4], .left, 4);
 
-    try expectEqual(.empty, board.get_square(.{ .J, ._3 }));
-    try expectEqual(.empty, board.get_square(.{ .I, ._3 }));
-    try expectEqual(.empty, board.get_square(.{ .H, ._3 }));
-    try expectEqual(.empty, board.get_square(.{ .G, ._3 }));
-    try expectEqual(.black, board.get_square(.{ .F, ._3 }));
-    try expectEqual(.black, board.get_square(.{ .E, ._3 }));
-    try expectEqual(.white, board.get_square(.{ .D, ._3 }));
-    try expectEqual(.white, board.get_square(.{ .C, ._3 }));
+    try board.check_contents_match(
+        &.{ .{ .D, ._3 }, .{ .C, ._3 } },
+        &.{ .{ .F, ._3 }, .{ .E, ._3 } },
+        null,
+    );
 }
 
 test "move many pieces vertical up" {
@@ -654,14 +853,11 @@ test "move many pieces vertical up" {
 
     try board.move_many_pieces(start_positions[0..4], .up, 6);
 
-    try expectEqual(.empty, board.get_square(.{ .D, ._1 }));
-    try expectEqual(.empty, board.get_square(.{ .D, ._2 }));
-    try expectEqual(.empty, board.get_square(.{ .D, ._3 }));
-    try expectEqual(.empty, board.get_square(.{ .D, ._4 }));
-    try expectEqual(.white, board.get_square(.{ .D, ._7 }));
-    try expectEqual(.white, board.get_square(.{ .D, ._8 }));
-    try expectEqual(.black, board.get_square(.{ .D, ._9 }));
-    try expectEqual(.black, board.get_square(.{ .D, ._10 }));
+    try board.check_contents_match(
+        &.{ .{ .D, ._7 }, .{ .D, ._8 } },
+        &.{ .{ .D, ._9 }, .{ .D, ._10 } },
+        null,
+    );
 }
 
 test "move many pieces vertical down" {
@@ -683,16 +879,11 @@ test "move many pieces vertical down" {
 
     try board.move_many_pieces(start_positions[0..5], .down, 5);
 
-    try expectEqual(.empty, board.get_square(.{ .F, ._10 }));
-    try expectEqual(.empty, board.get_square(.{ .F, ._9 }));
-    try expectEqual(.empty, board.get_square(.{ .F, ._8 }));
-    try expectEqual(.empty, board.get_square(.{ .F, ._7 }));
-    try expectEqual(.empty, board.get_square(.{ .F, ._6 }));
-    try expectEqual(.black, board.get_square(.{ .F, ._5 }));
-    try expectEqual(.black, board.get_square(.{ .F, ._4 }));
-    try expectEqual(.black, board.get_square(.{ .F, ._3 }));
-    try expectEqual(.white, board.get_square(.{ .F, ._2 }));
-    try expectEqual(.white, board.get_square(.{ .F, ._1 }));
+    try board.check_contents_match(
+        &.{ .{ .F, ._2 }, .{ .F, ._1 } },
+        &.{ .{ .F, ._5 }, .{ .F, ._4 }, .{ .F, ._3 } },
+        null,
+    );
 }
 
 test "get max move list single piece up" {
@@ -898,16 +1089,23 @@ test "execute move diagonally" {
     try board.place_piece(.white, top_left_pos);
     try board.place_piece(.black, .{ .I, ._8 });
 
-    try expectEqual(.white, board.get_square(top_left_pos));
-    try expectEqual(.black, board.get_square(.{ .I, ._8 }));
+    try board.check_contents_match(
+        &.{top_left_pos},
+        &.{.{ .I, ._8 }},
+        null,
+    );
 
     const move = Move{ .diagonal = notation.DiagonalMove{
         .from = .top_left,
         .distance = 3,
     } };
     try execute_move(&board, .white, move);
-    try expectEqual(.empty, board.get_square(top_left_pos));
-    try expectEqual(.white, board.get_square(.{ .D, ._7 }));
+
+    try board.check_contents_match(
+        &.{.{ .D, ._7 }},
+        &.{.{ .I, ._8 }},
+        null,
+    );
 }
 
 test "execute move diagonally with obstruction error" {
@@ -923,8 +1121,11 @@ test "execute move diagonally with obstruction error" {
     } };
     try expectError(error.PathBlocked, execute_move(&board, .white, move));
 
-    try expectEqual(.white, board.get_square(bottom_left_pos));
-    try expectEqual(.black, board.get_square(.{ .C, ._3 }));
+    try board.check_contents_match(
+        &.{bottom_left_pos},
+        &.{.{ .C, ._3 }},
+        null,
+    );
 }
 
 test "execute move horizontally with 2x3 block pushing 3 irregular pieces" {
@@ -948,21 +1149,11 @@ test "execute move horizontally with 2x3 block pushing 3 irregular pieces" {
     } };
     try execute_move(&board, .white, move);
 
-    try expectEqual(.empty, board.get_square(.{ .B, ._5 }));
-    try expectEqual(.empty, board.get_square(.{ .B, ._6 }));
-    try expectEqual(.empty, board.get_square(.{ .C, ._5 }));
-    try expectEqual(.empty, board.get_square(.{ .C, ._6 }));
-    try expectEqual(.empty, board.get_square(.{ .D, ._5 }));
-    try expectEqual(.empty, board.get_square(.{ .D, ._6 }));
-    try expectEqual(.white, board.get_square(.{ .E, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .E, ._6 }));
-    try expectEqual(.white, board.get_square(.{ .F, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .F, ._6 }));
-    try expectEqual(.white, board.get_square(.{ .G, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .G, ._6 }));
-    try expectEqual(.black, board.get_square(.{ .H, ._5 }));
-    try expectEqual(.black, board.get_square(.{ .H, ._6 }));
-    try expectEqual(.black, board.get_square(.{ .I, ._5 }));
+    try board.check_contents_match(
+        &.{ .{ .E, ._5 }, .{ .E, ._6 }, .{ .F, ._5 }, .{ .F, ._6 }, .{ .G, ._5 }, .{ .G, ._6 } },
+        &.{ .{ .H, ._5 }, .{ .H, ._6 }, .{ .I, ._5 } },
+        null,
+    );
 }
 
 test "execute move horizontally with invalid block shape error" {
@@ -980,9 +1171,11 @@ test "execute move horizontally with invalid block shape error" {
     } };
     try expectError(error.InvalidBlockShape, execute_move(&board, .white, move));
 
-    try expectEqual(.white, board.get_square(.{ .B, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .B, ._6 }));
-    try expectEqual(.white, board.get_square(.{ .C, ._5 }));
+    try board.check_contents_match(
+        &.{ .{ .B, ._5 }, .{ .B, ._6 }, .{ .C, ._5 } },
+        &.{},
+        null,
+    );
 }
 
 test "execute move horizontally with block cannot move sideways error" {
@@ -999,8 +1192,11 @@ test "execute move horizontally with block cannot move sideways error" {
     } };
     try expectError(error.BlockCannotMoveSideways, execute_move(&board, .white, move));
 
-    try expectEqual(.white, board.get_square(.{ .B, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .B, ._6 }));
+    try board.check_contents_match(
+        &.{ .{ .B, ._5 }, .{ .B, ._6 } },
+        &.{},
+        null,
+    );
 }
 
 test "execute move vertically with 3x2 block pushing 2 irregular pieces" {
@@ -1024,21 +1220,11 @@ test "execute move vertically with 3x2 block pushing 2 irregular pieces" {
     } };
     try execute_move(&board, .black, move);
 
-    try expectEqual(.empty, board.get_square(.{ .F, ._10 }));
-    try expectEqual(.empty, board.get_square(.{ .G, ._10 }));
-    try expectEqual(.empty, board.get_square(.{ .F, ._9 }));
-    try expectEqual(.empty, board.get_square(.{ .G, ._9 }));
-    try expectEqual(.empty, board.get_square(.{ .F, ._8 }));
-    try expectEqual(.empty, board.get_square(.{ .G, ._8 }));
-    try expectEqual(.black, board.get_square(.{ .F, ._5 }));
-    try expectEqual(.black, board.get_square(.{ .G, ._5 }));
-    try expectEqual(.black, board.get_square(.{ .F, ._4 }));
-    try expectEqual(.black, board.get_square(.{ .G, ._4 }));
-    try expectEqual(.black, board.get_square(.{ .F, ._3 }));
-    try expectEqual(.black, board.get_square(.{ .G, ._3 }));
-    try expectEqual(.white, board.get_square(.{ .F, ._2 }));
-    try expectEqual(.white, board.get_square(.{ .G, ._2 }));
-    try expectEqual(.white, board.get_square(.{ .F, ._1 }));
+    try board.check_contents_match(
+        &.{ .{ .F, ._2 }, .{ .F, ._1 }, .{ .G, ._2 } },
+        &.{ .{ .F, ._5 }, .{ .F, ._4 }, .{ .F, ._3 }, .{ .G, ._5 }, .{ .G, ._4 }, .{ .G, ._3 } },
+        null,
+    );
 }
 
 test "execute move vertically with invalid block shape error" {
@@ -1056,9 +1242,11 @@ test "execute move vertically with invalid block shape error" {
     } };
     try expectError(error.InvalidBlockShape, execute_move(&board, .black, move));
 
-    try expectEqual(.black, board.get_square(.{ .H, ._8 }));
-    try expectEqual(.black, board.get_square(.{ .H, ._9 }));
-    try expectEqual(.black, board.get_square(.{ .I, ._9 }));
+    try board.check_contents_match(
+        &.{},
+        &.{ .{ .H, ._8 }, .{ .H, ._9 }, .{ .I, ._9 } },
+        null,
+    );
 }
 
 test "execute move vertically with block cannot move sideways error" {
@@ -1075,6 +1263,9 @@ test "execute move vertically with block cannot move sideways error" {
     } };
     try expectError(error.BlockCannotMoveSideways, execute_move(&board, .black, move));
 
-    try expectEqual(.black, board.get_square(.{ .D, ._8 }));
-    try expectEqual(.black, board.get_square(.{ .E, ._8 }));
+    try board.check_contents_match(
+        &.{},
+        &.{ .{ .D, ._8 }, .{ .E, ._8 } },
+        null,
+    );
 }

@@ -32,17 +32,27 @@ pub fn place_demo_pieces(game_state: *GameState) !void {
     try game_state.place_next_piece(.{ .D, ._5 }); // Gold
 }
 
-/// Runs the main game loop, calling `get_next_move` to get the next move from the
-/// current player, and `render` to render the current game state after each move.
-pub fn run_game_loop(init_state: GameState, get_next_move: fn () anyerror!Move, render: fn (*const GameState) anyerror!void) !GameState {
+/// Interface for callbacks to user input and output.
+/// Functions are currently forced to be known at compile time,
+/// but we may want to use function pointers in the future for more flexibility.
+pub const UserInterface = struct {
+    /// Ask the user for the next move.
+    get_next_move: fn () anyerror!Move,
+
+    /// Render the current game state.
+    render: fn (state: *const GameState) anyerror!void,
+};
+
+/// Runs the main game loop, deferring to `ui` for input and output.
+pub fn run_game_loop(init_state: GameState, ui: UserInterface) !GameState {
     var game_state = init_state;
 
     while (game_state.phase != .finished) {
-        render(&game_state) catch |err| {
+        ui.render(&game_state) catch |err| {
             std.debug.print("Error rendering game state: {}\n", .{err});
         };
 
-        const turn_move = get_next_move() catch |err| {
+        const turn_move = ui.get_next_move() catch |err| {
             // When simulating games, we might run out of moves, even if the
             // game is not finished yet. In that case, we just end the game.
             if (err == error.NoMoreMoves) {
@@ -62,6 +72,28 @@ pub fn run_game_loop(init_state: GameState, get_next_move: fn () anyerror!Move, 
     return game_state;
 }
 
+fn SimulatedUserInterface(moves: []const Move) type {
+    return struct {
+        var moves_executed: usize = 0;
+
+        const interface: UserInterface = .{
+            .get_next_move = get_next_move,
+            .render = render,
+        };
+
+        pub fn get_next_move() !Move {
+            if (moves_executed >= moves.len) {
+                return error.NoMoreMoves;
+            }
+            const next_move = moves[moves_executed];
+            moves_executed += 1;
+            return next_move;
+        }
+
+        pub fn render(_: *const GameState) !void {}
+    };
+}
+
 test "game loop runs without errors" {
     var init_state = GameState.init(Job.turm3());
 
@@ -76,31 +108,9 @@ test "game loop runs without errors" {
         .{ .diagonal = .{ .from = .top_left, .distance = 4 } }, // White
     };
 
-    const mock_ui = struct {
-        var input_buffer: [100]u8 = undefined;
-        var reader = std.fs.File.stdin().readerStreaming(&input_buffer);
+    const mock_ui = SimulatedUserInterface(&moves);
 
-        const stdout = std.fs.File.stdout();
-        var output_buffer: [50]u8 = undefined;
-        var writer = stdout.writer(&output_buffer);
-
-        var moves_executed: usize = 0;
-
-        fn get_next_move() !Move {
-            if (moves_executed >= moves.len) {
-                return error.NoMoreMoves;
-            }
-            const next_move = moves[moves_executed];
-            moves_executed += 1;
-            return next_move;
-        }
-
-        fn render(current_state: *const GameState) !void {
-            _ = current_state; // autofix
-        }
-    };
-
-    const final_state = try run_game_loop(init_state, mock_ui.get_next_move, mock_ui.render);
+    const final_state = try run_game_loop(init_state, mock_ui.interface);
 
     // This renders the final board state to stdout for visual feedback during testing.
     // It's not strictly necessary for the test itself, but I like it.

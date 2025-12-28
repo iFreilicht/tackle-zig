@@ -12,7 +12,12 @@ pub fn main() !void {
         var output_buffer: [50]u8 = undefined;
         var writer = stdout.writer(&output_buffer);
 
-        fn get_next_move() !tackle.Move {
+        const interface: tackle.UserInterface = .{
+            .get_next_move = get_next_move,
+            .render = render,
+        };
+
+        pub fn get_next_move() !tackle.Move {
             while (true) {
                 std.debug.print("Enter your move:\n", .{});
                 var slice: ?[]const u8 = null;
@@ -29,7 +34,7 @@ pub fn main() !void {
             }
         }
 
-        fn render(state: *const tackle.GameState) !void {
+        pub fn render(state: *const tackle.GameState) !void {
             std.debug.print("\n\n", .{});
             try text_renderer.render_board(&writer.interface, &state.board);
             std.debug.print("{t} to move.\n", .{state.next_player()});
@@ -43,7 +48,7 @@ pub fn main() !void {
 
     try ui.render(&state);
 
-    _ = try tackle.run_game_loop(state, ui.get_next_move, ui.render);
+    _ = try tackle.run_game_loop(state, ui.interface);
 }
 
 test {

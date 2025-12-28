@@ -204,7 +204,7 @@ pub fn get_block_width(first: ColumnX, last: ColumnX) BlockSize {
 /// Pieces can only be placed on the border during the opening phase.
 pub fn is_on_border(position: Position) bool {
     const col, const row = position;
-    return (col == .A or col == .J) and (row == ._1 or row == ._10);
+    return col == .A or col == .J or row == ._1 or row == ._10;
 }
 
 /// Return true if the given square is in the court, i.e. not on the border.
@@ -219,9 +219,9 @@ pub fn is_in_court(position: Position) bool {
 pub fn is_in_core(position: Position) bool {
     const col, const row = position;
     const col_int = @intFromEnum(col);
-    const col_in_core = (col_int >= @intFromEnum(.D)) and (col_int <= @intFromEnum(.G));
+    const col_in_core = (col_int >= @intFromEnum(ColumnX.D)) and (col_int <= @intFromEnum(ColumnX.G));
     const row_int = @intFromEnum(row);
-    const row_in_core = (row_int >= @intFromEnum(._4)) and (row_int <= @intFromEnum(._7));
+    const row_in_core = (row_int >= @intFromEnum(RowY._4)) and (row_int <= @intFromEnum(RowY._7));
     return col_in_core and row_in_core;
 }
 

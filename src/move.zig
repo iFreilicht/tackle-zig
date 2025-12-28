@@ -53,7 +53,7 @@ pub const HorizontalMove = struct {
     from_x: ColumnX,
     to_x: ColumnX,
     y: RowY,
-    block_height: BlockSize,
+    block_height: BlockSize = .no_block,
 
     fn is_block(self: @This()) bool {
         return self.block_height != .no_block;
@@ -104,7 +104,7 @@ pub const VerticalMove = struct {
     from_y: RowY,
     to_y: RowY,
     x: ColumnX,
-    block_width: BlockSize,
+    block_width: BlockSize = .no_block,
 
     fn is_block(self: @This()) bool {
         return self.block_width != .no_block;

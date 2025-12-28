@@ -24,8 +24,10 @@ const Corner = position.Corner;
 const Position = position.Position;
 
 const validate_color = enums.validate_color;
+const validate_color_when_placing = enums.validate_color_when_placing;
 const move_position = position.move_position;
 const move_position_if_possible = position.move_position_if_possible;
+const is_on_border = position.is_on_border;
 
 /// Representation of the game board and the pieces on it.
 pub const Board = struct {

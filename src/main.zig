@@ -1,31 +1,53 @@
 const std = @import("std");
-const tackle = @import("tackle.zig");
+const tackle = @import("root.zig");
 const text_renderer = tackle.text_renderer;
 
 pub fn main() !void {
-    // Initialize the board and place some pieces
-    var board = tackle.board.Board{};
-    try board.place_piece(.white, .{ .A, ._10 });
-    try board.place_piece(.black, .{ .D, ._1 });
+    const ui = struct {
+        const stdin = std.fs.File.stdin();
+        var input_buffer: [100]u8 = undefined;
+        var reader = stdin.readerStreaming(&input_buffer);
 
-    // Parse and execute a couple of moves
-    var input = std.io.Reader.fixed("wA10-C8");
-    const turn = try tackle.notation.TurnParser.parse(&input);
-    try board.execute_move(turn.by, turn.move);
+        const stdout = std.fs.File.stdout();
+        var output_buffer: [50]u8 = undefined;
+        var writer = stdout.writer(&output_buffer);
 
-    input = std.io.Reader.fixed("bD1-D7x");
-    const turn2 = try tackle.notation.TurnParser.parse(&input);
-    try board.execute_move(turn2.by, turn2.move);
+        fn get_next_move() !tackle.Move {
+            while (true) {
+                std.debug.print("Enter your move:\n", .{});
+                var slice: ?[]const u8 = null;
+                while (slice == null) {
+                    slice = try reader.interface.takeDelimiter('\n');
+                }
+                var move_reader = std.io.Reader.fixed(slice orelse unreachable);
+                const turn = tackle.TurnParser.parse(&move_reader) catch |err| {
+                    std.debug.print("Error parsing move: {}\n", .{err});
+                    std.debug.print("Please enter a valid move:\n", .{});
+                    continue;
+                };
+                return turn.move;
+            }
+        }
 
-    // Finally, render the board to stdout
-    const stdout = std.fs.File.stdout();
-    var buffer: [50]u8 = undefined;
-    var writer = stdout.writer(&buffer);
-    try text_renderer.render_board(&writer.interface, &board);
+        fn render(state: *const tackle.GameState) !void {
+            std.debug.print("\n\n", .{});
+            try text_renderer.render_board(&writer.interface, &state.board);
+            std.debug.print("{t} to move.\n", .{state.next_player()});
+        }
+    };
+
+    const job = tackle.Job.turm3();
+    var state = tackle.GameState.init(job);
+
+    try tackle.place_demo_pieces(&state);
+
+    try ui.render(&state);
+
+    _ = try tackle.run_game_loop(state, ui.get_next_move, ui.render);
 }
 
-test "main runs without errors" {
-    try main();
+test {
+    std.testing.refAllDecls(@This());
 }
 
 test "simple test" {

@@ -5,9 +5,10 @@ pub const board_size = 10;
 /// Thus the absolute maximum job size is 8x8.
 pub const max_job_size = 8;
 
-/// All player pieces have to start on the border. So the maximum
+/// All player pieces have to start on the border. So the absolute maximum
 /// number of pieces per player is 18. In practice, this would require a 16 piece
-/// job like block4, which is impractical but technically playable.
+/// job (like 4x4 block16). The rules say the "most difficult" job is block9,
+/// which requires 11 pieces per player, but we don't enforce that limit.
 pub const max_pieces_per_player = 18;
 
 /// Column letters A-J

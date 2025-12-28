@@ -13,11 +13,30 @@ pub fn main() !void {
         var writer = stdout.writer(&output_buffer);
 
         const interface: tackle.UserInterface = .{
+            .get_next_placement = get_next_placement,
             .get_next_move = get_next_move,
             .render = render,
         };
 
-        pub fn get_next_move() !tackle.Move {
+        pub fn get_next_placement() !tackle.Position {
+            while (true) {
+                std.debug.print("Enter your piece placement:\n", .{});
+                var slice: ?[]const u8 = null;
+                while (slice == null) {
+                    slice = try reader.interface.takeDelimiter('\n');
+                }
+                var pos_reader = std.io.Reader.fixed(slice orelse unreachable);
+
+                const position = tackle.parse_position(&pos_reader) catch |err| {
+                    std.debug.print("Error parsing position: {}\n", .{err});
+                    std.debug.print("Please enter a valid placement:\n", .{});
+                    continue;
+                };
+                return position;
+            }
+        }
+
+        pub fn get_next_move(state: *const tackle.GameState) !tackle.Move {
             while (true) {
                 std.debug.print("Enter your move:\n", .{});
                 var slice: ?[]const u8 = null;
@@ -25,7 +44,9 @@ pub fn main() !void {
                     slice = try reader.interface.takeDelimiter('\n');
                 }
                 var move_reader = std.io.Reader.fixed(slice orelse unreachable);
-                const turn = tackle.TurnParser.parse(&move_reader) catch |err| {
+
+                const player = state.next_player();
+                const turn = tackle.parse_turn(&move_reader, player) catch |err| {
                     std.debug.print("Error parsing move: {}\n", .{err});
                     std.debug.print("Please enter a valid move:\n", .{});
                     continue;
@@ -37,7 +58,13 @@ pub fn main() !void {
         pub fn render(state: *const tackle.GameState) !void {
             std.debug.print("\n\n", .{});
             try text_renderer.render_board(&writer.interface, &state.board);
-            std.debug.print("{t} to move.\n", .{state.next_player()});
+            const player = state.next_player();
+            switch (state.phase) {
+                .opening => std.debug.print("Turn {}, {t} to place a piece.\n", .{ state.turn, player }),
+                .place_gold => std.debug.print("Place the gold piece for Black.\n", .{}),
+                .main => std.debug.print("Turn {}, {t} to move.\n", .{ state.turn, player }),
+                .finished => std.debug.print("Game over.\n", .{}),
+            }
         }
     };
 

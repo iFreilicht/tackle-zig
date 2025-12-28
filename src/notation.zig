@@ -14,6 +14,7 @@ const Move = move_module.Move;
 const Corner = position.Corner;
 const ColumnX = position.ColumnX;
 const RowY = position.RowY;
+const Position = position.Position;
 const BlockSize = position.BlockSize;
 const get_block_width = position.get_block_width;
 const get_block_height = position.get_block_height;
@@ -81,7 +82,16 @@ const Turn = struct {
     }
 };
 
-pub const TurnParser = struct {
+pub fn parse_position(reader: *std.io.Reader) !Position {
+    const column = try ColumnX.parse(reader);
+    const row = try RowY.parse(reader);
+    return .{ column, row };
+}
+
+/// Parse a turn in the standard notation from the given reader.
+/// The `color` parameter can be used to substitute for the w/b prefix
+/// in the notation.
+pub fn parse_turn(reader: *std.io.Reader, color: ?Player) !Turn {
     const State = enum {
         start,
         color,
@@ -100,230 +110,220 @@ pub const TurnParser = struct {
         quality,
         done,
     };
+    var by: Player = undefined;
+    var column_start: ColumnX = undefined;
+    var row_start: RowY = undefined;
+    var column_end: ColumnX = undefined;
+    var row_end: RowY = undefined;
+    var block_width: ?BlockSize = null;
+    var block_height: ?BlockSize = null;
+    var winning: ?CommentWinning = null;
+    var special_action: ?SpecialAction = null;
+    var quality: ?CommentQuality = null;
 
-    const Error = error{
-        ColorInvalid,
-        SecondColumnSmallerThanFirst,
-        RowTooShort,
-        FirstRowIs10,
-        SecondRowSmallerThanFirst,
-        DiagonalMoveIllegal,
-        BlockInTwoDirections,
-        WinningCommentInvalid,
-    };
-
-    pub fn parse(reader: *std.io.Reader) !Turn {
-        var by: Player = undefined;
-        var column_start: ColumnX = undefined;
-        var row_start: RowY = undefined;
-        var column_end: ColumnX = undefined;
-        var row_end: RowY = undefined;
-        var block_width: ?BlockSize = null;
-        var block_height: ?BlockSize = null;
-        var winning: ?CommentWinning = null;
-        var special_action: ?SpecialAction = null;
-        var quality: ?CommentQuality = null;
-
-        parse: switch (State.start) {
-            .start => {
-                continue :parse .color;
-            },
-            .color => {
-                const c = try reader.takeByte();
-                by = switch (c) {
-                    'w' => .white,
-                    'b' => .black,
-                    else => return Error.ColorInvalid,
-                };
+    parse: switch (State.start) {
+        .start => {
+            if (color != null) {
+                by = color orelse unreachable;
                 continue :parse .block;
-            },
-            .block => {
-                try reader.fill(block_sigil.len);
-                const s = try reader.peek(block_sigil.len);
-                if (std.mem.eql(u8, s, block_sigil)) {
-                    reader.toss(block_sigil.len);
-                    // Block size is determined later. It's not an error if the move
-                    // is a block move despite the block symbol missing from the input.
-                }
-                continue :parse .letter_start;
-            },
-            .letter_start => {
-                column_start = try ColumnX.parse(reader);
-                continue :parse .second_letter_start;
-            },
-            .second_letter_start => {
-                const column = ColumnX.parse(reader) catch |err| {
-                    if (err == error.ColumnInvalid) {
-                        // No second column means no block move
-                        block_width = .no_block;
-                        continue :parse .number_start;
-                    } else {
-                        return err;
-                    }
-                };
-                if (@intFromEnum(column) <= @intFromEnum(column_start)) return Error.SecondColumnSmallerThanFirst;
-                block_width = get_block_width(column_start, column);
-                continue :parse .number_start;
-            },
-            .number_start => {
-                row_start = try RowY.parse(reader);
-                if (row_start == ._10) continue :parse .dash;
-                continue :parse .second_number_start;
-            },
-            .second_number_start => {
-                const row = RowY.parse(reader) catch |err| {
-                    if (err == error.RowInvalid) {
-                        // No second row means no block move
-                        block_height = .no_block;
-                        continue :parse .dash;
-                    } else {
-                        return err;
-                    }
-                };
-                if (@intFromEnum(row) <= @intFromEnum(row_start)) return Error.SecondRowSmallerThanFirst;
-                block_height = get_block_height(row_start, row);
-                continue :parse .dash;
-            },
-            .dash => {
-                _ = try reader.takeDelimiter('-');
-                continue :parse .letter_end;
-            },
-            .letter_end => {
-                column_end = try ColumnX.parse(reader);
-                continue :parse .second_letter_end;
-            },
-            .second_letter_end => {
-                const column = ColumnX.parse(reader) catch |err| {
-                    if (err == error.ColumnInvalid) {
-                        continue :parse .number_end;
-                    } else {
-                        return err;
-                    }
-                };
-                if (@intFromEnum(column) <= @intFromEnum(column_start)) return Error.SecondColumnSmallerThanFirst;
-                // block width was already determined when parsing the start letters
-                continue :parse .number_end;
-            },
-            .number_end => {
-                row_end = try RowY.parse(reader);
-                continue :parse .second_number_end;
-            },
-            .second_number_end => {
-                const row = RowY.parse(reader) catch |err| {
-                    if (err == error.RowInvalid) {
-                        continue :parse .winning;
-                    } else if (err == error.EndOfStream) {
-                        continue :parse .done;
-                    } else {
-                        return err;
-                    }
-                };
-                if (@intFromEnum(row) <= @intFromEnum(row_end)) return Error.SecondRowSmallerThanFirst;
-                // block height was already determined when parsing the start numbers
-                continue :parse .winning;
-            },
-            .winning => {
-                const s = reader.takeDelimiterExclusive('(') catch |err| {
-                    if (err == error.EndOfStream) {
-                        continue :parse .done;
-                    } else {
-                        return err;
-                    }
-                };
-                if (std.mem.eql(u8, s, "x")) {
-                    winning = .job_in_one;
-                } else if (std.mem.eql(u8, s, "xx")) {
-                    winning = .win;
-                } else if (s.len != 0) return Error.WinningCommentInvalid;
-                continue :parse .special_action;
-            },
-            .special_action => {
-                const s = reader.takeDelimiterInclusive(')') catch |err| {
-                    if (err == error.EndOfStream) {
-                        continue :parse .done;
-                    } else {
-                        return err;
-                    }
-                };
-                if (std.mem.startsWith(u8, s, "(>)")) {
-                    special_action = .gold_removed;
-                } else if (std.mem.startsWith(u8, s, "(w)")) {
-                    special_action = .worm;
-                } else {
-                    // Rewind the reader as this comment might be a quality comment
-                    reader.seek -= s.len;
-                }
-                continue :parse .quality;
-            },
-            .quality => {
-                const s = reader.takeDelimiterInclusive(')') catch |err| {
-                    if (err == error.EndOfStream) {
-                        continue :parse .done;
-                    } else {
-                        return err;
-                    }
-                };
-                if (s.len == 0) continue :parse .done;
-                if (std.mem.startsWith(u8, s, "(!!)")) {
-                    quality = .very_good;
-                } else if (std.mem.startsWith(u8, s, "(!)")) {
-                    quality = .good;
-                } else if (std.mem.startsWith(u8, s, "(!?)")) {
-                    quality = .interesting;
-                } else if (std.mem.startsWith(u8, s, "(?)")) {
-                    quality = .bad;
-                } else if (std.mem.startsWith(u8, s, "(??)")) {
-                    quality = .very_bad;
-                }
-                continue :parse .done;
-            },
-            .done => {},
-        }
-
-        var move: Move = undefined;
-        if (row_start == row_end) {
-            // Horizontal move
-            move = .{ .horizontal = .{
-                .from_x = column_start,
-                .to_x = column_end,
-                .y = row_start,
-                .block_height = block_height orelse unreachable,
-            } };
-        } else if (column_start == column_end) {
-            // Vertical move
-            move = .{ .vertical = .{
-                .from_y = row_start,
-                .to_y = row_end,
-                .x = column_start,
-                .block_width = block_width orelse unreachable,
-            } };
-        } else {
-            // Diagonal move
-            const from: Corner = switch (row_start) {
-                ._1 => if (column_start == .A) .bottom_left else .bottom_right,
-                ._10 => if (column_start == .A) .top_left else .top_right,
-                else => return Error.RowTooShort,
+            }
+            continue :parse .color;
+        },
+        .color => {
+            const c = try reader.takeByte();
+            by = switch (c) {
+                'w' => .white,
+                'b' => .black,
+                else => return error.ColorInvalid,
             };
-            const distance_col = column_start.distance(column_end);
-            const distance_row = row_start.distance(row_end);
-            if (distance_col != distance_row) return Error.DiagonalMoveIllegal;
-
-            move = .{ .diagonal = .{
-                .from = from,
-                .distance = distance_col,
-            } };
-        }
-
-        // After parsing, construct the Turn object
-        return Turn{
-            .by = by,
-            .move = move,
-            .winning = winning,
-            .special_action = special_action,
-            .quality = quality,
-        };
+            continue :parse .block;
+        },
+        .block => {
+            try reader.fill(block_sigil.len);
+            const s = try reader.peek(block_sigil.len);
+            if (std.mem.eql(u8, s, block_sigil)) {
+                reader.toss(block_sigil.len);
+                // Block size is determined later. It's not an error if the move
+                // is a block move despite the block symbol missing from the input.
+            }
+            continue :parse .letter_start;
+        },
+        .letter_start => {
+            column_start = try ColumnX.parse(reader);
+            continue :parse .second_letter_start;
+        },
+        .second_letter_start => {
+            const column = ColumnX.parse(reader) catch |err| {
+                if (err == error.ColumnInvalid) {
+                    // No second column means no block move
+                    block_width = .no_block;
+                    continue :parse .number_start;
+                } else {
+                    return err;
+                }
+            };
+            if (@intFromEnum(column) <= @intFromEnum(column_start)) return error.SecondColumnSmallerThanFirst;
+            block_width = get_block_width(column_start, column);
+            continue :parse .number_start;
+        },
+        .number_start => {
+            row_start = try RowY.parse(reader);
+            if (row_start == ._10) continue :parse .dash;
+            continue :parse .second_number_start;
+        },
+        .second_number_start => {
+            const row = RowY.parse(reader) catch |err| {
+                if (err == error.RowInvalid) {
+                    // No second row means no block move
+                    block_height = .no_block;
+                    continue :parse .dash;
+                } else {
+                    return err;
+                }
+            };
+            if (@intFromEnum(row) <= @intFromEnum(row_start)) return error.SecondRowSmallerThanFirst;
+            block_height = get_block_height(row_start, row);
+            continue :parse .dash;
+        },
+        .dash => {
+            _ = try reader.takeDelimiter('-');
+            continue :parse .letter_end;
+        },
+        .letter_end => {
+            column_end = try ColumnX.parse(reader);
+            continue :parse .second_letter_end;
+        },
+        .second_letter_end => {
+            const column = ColumnX.parse(reader) catch |err| {
+                if (err == error.ColumnInvalid) {
+                    continue :parse .number_end;
+                } else {
+                    return err;
+                }
+            };
+            if (@intFromEnum(column) <= @intFromEnum(column_start)) return error.SecondColumnSmallerThanFirst;
+            // block width was already determined when parsing the start letters
+            continue :parse .number_end;
+        },
+        .number_end => {
+            row_end = try RowY.parse(reader);
+            continue :parse .second_number_end;
+        },
+        .second_number_end => {
+            const row = RowY.parse(reader) catch |err| {
+                if (err == error.RowInvalid) {
+                    continue :parse .winning;
+                } else if (err == error.EndOfStream) {
+                    continue :parse .done;
+                } else {
+                    return err;
+                }
+            };
+            if (@intFromEnum(row) <= @intFromEnum(row_end)) return error.SecondRowSmallerThanFirst;
+            // block height was already determined when parsing the start numbers
+            continue :parse .winning;
+        },
+        .winning => {
+            const s = reader.takeDelimiterExclusive('(') catch |err| {
+                if (err == error.EndOfStream) {
+                    continue :parse .done;
+                } else {
+                    return err;
+                }
+            };
+            if (std.mem.eql(u8, s, "x")) {
+                winning = .job_in_one;
+            } else if (std.mem.eql(u8, s, "xx")) {
+                winning = .win;
+            } else if (s.len != 0) return error.WinningCommentInvalid;
+            continue :parse .special_action;
+        },
+        .special_action => {
+            const s = reader.takeDelimiterInclusive(')') catch |err| {
+                if (err == error.EndOfStream) {
+                    continue :parse .done;
+                } else {
+                    return err;
+                }
+            };
+            if (std.mem.startsWith(u8, s, "(>)")) {
+                special_action = .gold_removed;
+            } else if (std.mem.startsWith(u8, s, "(w)")) {
+                special_action = .worm;
+            } else {
+                // Rewind the reader as this comment might be a quality comment
+                reader.seek -= s.len;
+            }
+            continue :parse .quality;
+        },
+        .quality => {
+            const s = reader.takeDelimiterInclusive(')') catch |err| {
+                if (err == error.EndOfStream) {
+                    continue :parse .done;
+                } else {
+                    return err;
+                }
+            };
+            if (s.len == 0) continue :parse .done;
+            if (std.mem.startsWith(u8, s, "(!!)")) {
+                quality = .very_good;
+            } else if (std.mem.startsWith(u8, s, "(!)")) {
+                quality = .good;
+            } else if (std.mem.startsWith(u8, s, "(!?)")) {
+                quality = .interesting;
+            } else if (std.mem.startsWith(u8, s, "(?)")) {
+                quality = .bad;
+            } else if (std.mem.startsWith(u8, s, "(??)")) {
+                quality = .very_bad;
+            }
+            continue :parse .done;
+        },
+        .done => {},
     }
-};
+
+    var move: Move = undefined;
+    if (row_start == row_end) {
+        // Horizontal move
+        move = .{ .horizontal = .{
+            .from_x = column_start,
+            .to_x = column_end,
+            .y = row_start,
+            .block_height = block_height orelse unreachable,
+        } };
+    } else if (column_start == column_end) {
+        // Vertical move
+        move = .{ .vertical = .{
+            .from_y = row_start,
+            .to_y = row_end,
+            .x = column_start,
+            .block_width = block_width orelse unreachable,
+        } };
+    } else {
+        // Diagonal move
+        const from: Corner = switch (row_start) {
+            ._1 => if (column_start == .A) .bottom_left else .bottom_right,
+            ._10 => if (column_start == .A) .top_left else .top_right,
+            else => return error.RowTooShort,
+        };
+        const distance_col = column_start.distance(column_end);
+        const distance_row = row_start.distance(row_end);
+        if (distance_col != distance_row) return error.DiagonalMoveIllegal;
+
+        move = .{ .diagonal = .{
+            .from = from,
+            .distance = distance_col,
+        } };
+    }
+
+    // After parsing, construct the Turn object
+    return Turn{
+        .by = by,
+        .move = move,
+        .winning = winning,
+        .special_action = special_action,
+        .quality = quality,
+    };
+}
 
 test "format horizontal simple move" {
     const turn: Turn = .{
@@ -492,7 +492,7 @@ test "format move resulting in maximum string length" {
 
 test "parse horizontal simple move" {
     var input = std.io.Reader.fixed("bH4-B4");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .black,
         .move = .{ .horizontal = .{
@@ -508,7 +508,7 @@ test "parse horizontal simple move" {
 
 test "parse horizontal block move" {
     var input = std.io.Reader.fixed("w▢D56-G56");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .white,
         .move = .{ .horizontal = .{
@@ -524,7 +524,7 @@ test "parse horizontal block move" {
 
 test "parse vertical simple move" {
     var input = std.io.Reader.fixed("wC2-C5");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .white,
         .move = .{ .vertical = .{
@@ -540,7 +540,7 @@ test "parse vertical simple move" {
 
 test "parse vertical block move" {
     var input = std.io.Reader.fixed("b▢EF10-EF1");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .black,
         .move = .{ .vertical = .{
@@ -556,7 +556,7 @@ test "parse vertical block move" {
 
 test "parse diagonal move 1" {
     var input = std.io.Reader.fixed("wA1-E5");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .white,
         .move = .{ .diagonal = .{
@@ -570,7 +570,7 @@ test "parse diagonal move 1" {
 
 test "parse diagonal move 2" {
     var input = std.io.Reader.fixed("bJ10-G7");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .black,
         .move = .{ .diagonal = .{
@@ -584,7 +584,7 @@ test "parse diagonal move 2" {
 
 test "parse diagonal move 3" {
     var input = std.io.Reader.fixed("wA10-F5");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .white,
         .move = .{ .diagonal = .{
@@ -598,7 +598,7 @@ test "parse diagonal move 3" {
 
 test "parse diagonal move 4" {
     var input = std.io.Reader.fixed("bJ1-A10");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .black,
         .move = .{ .diagonal = .{
@@ -612,7 +612,7 @@ test "parse diagonal move 4" {
 
 test "parse full move with comments" {
     var input = std.io.Reader.fixed("b▢EF1-EF10x(>)(!?)");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .black,
         .move = .{ .vertical = .{
@@ -631,7 +631,7 @@ test "parse full move with comments" {
 
 test "parse move only with quality comment" {
     var input = std.io.Reader.fixed("wA1-A2(!!)");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .white,
         .move = .{ .vertical = .{
@@ -648,7 +648,7 @@ test "parse move only with quality comment" {
 
 test "parse move only with special action comment" {
     var input = std.io.Reader.fixed("bJ10-J9(>)");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .black,
         .move = .{ .vertical = .{
@@ -665,7 +665,7 @@ test "parse move only with special action comment" {
 
 test "parse move only with winning comment" {
     var input = std.io.Reader.fixed("wC3-C4x");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .white,
         .move = .{ .vertical = .{
@@ -682,7 +682,7 @@ test "parse move only with winning comment" {
 
 test "parse move with maximum string length" {
     var input = std.io.Reader.fixed("w▢D810-J810xx(>)(!!)");
-    const turn = try TurnParser.parse(&input);
+    const turn = try parse_turn(&input, null);
     const expected: Turn = .{
         .by = .white,
         .move = .{ .horizontal = .{

@@ -13,11 +13,14 @@ const board_size = constants.board_size;
 const max_job_size = constants.max_job_size;
 const column_letters = constants.column_letters;
 
+pub const Position = position.Position;
 pub const Move = move.Move;
 pub const GameState = state.GameState;
 pub const Job = state.Job;
-pub const TurnParser = notation.TurnParser;
+pub const parse_position = notation.parse_position;
+pub const parse_turn = notation.parse_turn;
 
+/// Place some demo pieces on the board to speed up testing.
 pub fn place_demo_pieces(game_state: *GameState) !void {
     try game_state.place_next_piece(.{ .A, ._10 }); // White
     try game_state.place_next_piece(.{ .B, ._1 }); // Black
@@ -27,17 +30,21 @@ pub fn place_demo_pieces(game_state: *GameState) !void {
     try game_state.place_next_piece(.{ .J, ._8 }); // Black
     try game_state.place_next_piece(.{ .J, ._6 }); // White
     try game_state.place_next_piece(.{ .E, ._10 }); // Black
-    try game_state.place_next_piece(.{ .C, ._10 }); // White
-    try game_state.place_next_piece(.{ .A, ._8 }); // Black
-    try game_state.place_next_piece(.{ .D, ._5 }); // Gold
+    // I want to test placing pieces as well, so leaving these commented out for now.
+    //try game_state.place_next_piece(.{ .C, ._10 }); // White
+    //try game_state.place_next_piece(.{ .A, ._8 }); // Black
+    //try game_state.place_next_piece(.{ .D, ._5 }); // Gold
 }
 
 /// Interface for callbacks to user input and output.
 /// Functions are currently forced to be known at compile time,
 /// but we may want to use function pointers in the future for more flexibility.
 pub const UserInterface = struct {
+    /// Ask the user where the next piece should be placed.
+    get_next_placement: fn () anyerror!Position,
+
     /// Ask the user for the next move.
-    get_next_move: fn () anyerror!Move,
+    get_next_move: fn (state: *const GameState) anyerror!Move,
 
     /// Render the current game state.
     render: fn (state: *const GameState) anyerror!void,
@@ -52,7 +59,21 @@ pub fn run_game_loop(init_state: GameState, ui: UserInterface) !GameState {
             std.debug.print("Error rendering game state: {}\n", .{err});
         };
 
-        const turn_move = ui.get_next_move() catch |err| {
+        if (game_state.phase == .opening or game_state.phase == .place_gold) {
+            const placement = ui.get_next_placement() catch |err| {
+                std.debug.print("Error getting next placement: {}\n", .{err});
+                continue;
+            };
+
+            const x, const y = placement;
+            game_state.place_next_piece(placement) catch |err| {
+                std.debug.print("Error placing piece at '{f}{f}': {}\n", .{ x, y, err });
+                continue;
+            };
+            continue;
+        }
+
+        const turn_move = ui.get_next_move(&game_state) catch |err| {
             // When simulating games, we might run out of moves, even if the
             // game is not finished yet. In that case, we just end the game.
             if (err == error.NoMoreMoves) {
@@ -72,16 +93,24 @@ pub fn run_game_loop(init_state: GameState, ui: UserInterface) !GameState {
     return game_state;
 }
 
-fn SimulatedUserInterface(moves: []const Move) type {
+fn SimulatedUserInterface(placements: []const Position, moves: []const Move) type {
     return struct {
+        var pieces_placed: usize = 0;
         var moves_executed: usize = 0;
 
         const interface: UserInterface = .{
+            .get_next_placement = get_next_placement,
             .get_next_move = get_next_move,
             .render = render,
         };
 
-        pub fn get_next_move() !Move {
+        pub fn get_next_placement() anyerror!Position {
+            const next_placement = placements[pieces_placed];
+            pieces_placed += 1;
+            return next_placement;
+        }
+
+        pub fn get_next_move(_: *const GameState) !Move {
             if (moves_executed >= moves.len) {
                 return error.NoMoreMoves;
             }
@@ -95,9 +124,21 @@ fn SimulatedUserInterface(moves: []const Move) type {
 }
 
 test "game loop runs without errors" {
-    var init_state = GameState.init(Job.turm3());
+    const init_state = GameState.init(Job.turm3());
 
-    try place_demo_pieces(&init_state);
+    const placements = [_]Position{
+        .{ .A, ._10 }, // White
+        .{ .B, ._1 }, // Black
+        .{ .J, ._9 }, // White
+        .{ .E, ._1 }, // Black
+        .{ .C, ._1 }, // White
+        .{ .J, ._8 }, // Black
+        .{ .J, ._6 }, // White
+        .{ .E, ._10 }, // Black
+        .{ .C, ._10 }, // White
+        .{ .A, ._8 }, // Black
+        .{ .D, ._5 }, // Gold
+    };
 
     const moves = [_]Move{
         .{ .vertical = .{ .x = .C, .from_y = ._1, .to_y = ._6 } }, // White
@@ -108,7 +149,7 @@ test "game loop runs without errors" {
         .{ .diagonal = .{ .from = .top_left, .distance = 4 } }, // White
     };
 
-    const mock_ui = SimulatedUserInterface(&moves);
+    const mock_ui = SimulatedUserInterface(&placements, &moves);
 
     const final_state = try run_game_loop(init_state, mock_ui.interface);
 

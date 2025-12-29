@@ -24,6 +24,10 @@ pub const SquareContent = enum(u2) {
     black = 2,
     gold = 3,
 
+    pub fn from_player(p: Player) @This() {
+        return @enumFromInt(@intFromEnum(p));
+    }
+
     pub fn from_color(c: PieceColor) @This() {
         return @enumFromInt(@intFromEnum(c));
     }

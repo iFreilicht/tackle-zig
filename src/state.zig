@@ -2,6 +2,7 @@ const std = @import("std");
 const constants = @import("constants.zig");
 const board_module = @import("board.zig");
 const enums = @import("enums.zig");
+const job_module = @import("job.zig");
 const position = @import("position.zig");
 const move_module = @import("move.zig");
 
@@ -13,6 +14,7 @@ const expectEqualSlices = std.testing.expectEqualSlices;
 const max_job_size = constants.max_job_size;
 
 const Board = board_module.Board;
+const Job = job_module.Job;
 
 const Player = enums.Player;
 const PieceColor = enums.PieceColor;
@@ -28,36 +30,7 @@ const is_on_border = position.is_on_border;
 const is_in_core = position.is_in_core;
 const move_position = position.move_position;
 const move_position_if_possible = position.move_position_if_possible;
-
-pub const JobRequirement = enum { piece, empty, any };
-pub const Job = struct {
-    size_x: u3,
-    size_y: u3,
-    requirements: [max_job_size * max_job_size]JobRequirement,
-    total_pieces: u4, // Maximum of 16 pieces, see also `max_pieces_per_player`
-
-    pub fn turm3() Job {
-        return Job{
-            .size_x = 1,
-            .size_y = 3,
-            .requirements = [_]JobRequirement{
-                .piece, .piece, .piece,
-            } ++ (.{.empty} ** (max_job_size * max_job_size - 3)),
-            .total_pieces = 3,
-        };
-    }
-
-    pub fn block4() Job {
-        return Job{
-            .size_x = 2,
-            .size_y = 2,
-            .requirements = [_]JobRequirement{
-                .piece, .piece, .piece, .piece,
-            } ++ (.{.empty} ** (max_job_size * max_job_size - 4)),
-            .total_pieces = 4,
-        };
-    }
-};
+const pos_from_int = position.pos_from_int;
 
 pub const Phase = enum(u2) {
     /// Initial phase where pieces are placed on the board

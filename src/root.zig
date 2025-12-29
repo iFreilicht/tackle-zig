@@ -3,6 +3,7 @@ const std = @import("std");
 pub const board = @import("board.zig");
 pub const enums = @import("enums.zig");
 pub const constants = @import("constants.zig");
+pub const job = @import("job.zig");
 pub const move = @import("move.zig");
 pub const notation = @import("notation.zig");
 pub const position = @import("position.zig");
@@ -16,7 +17,7 @@ const column_letters = constants.column_letters;
 pub const Position = position.Position;
 pub const Move = move.Move;
 pub const GameState = state.GameState;
-pub const Job = state.Job;
+pub const Job = job.Job;
 pub const parse_position = notation.parse_position;
 pub const parse_turn = notation.parse_turn;
 

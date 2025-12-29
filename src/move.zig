@@ -13,8 +13,8 @@ const RowY = position.RowY;
 const Position = position.Position;
 const BlockSize = position.BlockSize;
 
-const pos_to_int = position.pos_to_int;
-const int_to_pos = position.int_to_pos;
+const int_from_pos = position.int_from_pos;
+const pos_from_int = position.pos_from_int;
 
 pub const DiagonalMove = struct {
     from: Corner,
@@ -26,7 +26,7 @@ pub const DiagonalMove = struct {
     }
     /// Return the ending Position of this diagonal move.
     pub fn end(self: @This()) Position {
-        const start_x, const start_y = pos_to_int(self.start());
+        const start_x, const start_y = int_from_pos(self.start());
         const end_x: u4 = switch (self.from) {
             .bottom_left => start_x + self.distance,
             .bottom_right => start_x - self.distance,
@@ -39,7 +39,7 @@ pub const DiagonalMove = struct {
             .top_left => start_y - self.distance,
             .top_right => start_y - self.distance,
         };
-        return int_to_pos(.{ end_x, end_y });
+        return pos_from_int(.{ end_x, end_y });
     }
 
     pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {

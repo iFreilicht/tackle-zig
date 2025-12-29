@@ -292,10 +292,10 @@ pub fn move_position(pos: Position, direction: Direction, distance: u4) Position
 /// 1-10 for both coordinates, 0 is not a valid value!
 pub const IntPosition = struct { u4, u4 };
 
-pub fn pos_to_int(pos: Position) IntPosition {
+pub fn int_from_pos(pos: Position) IntPosition {
     return .{ @intFromEnum(pos.@"0"), @intFromEnum(pos.@"1") };
 }
-pub fn int_to_pos(int: IntPosition) Position {
+pub fn pos_from_int(int: IntPosition) Position {
     return .{ @enumFromInt(int.@"0"), @enumFromInt(int.@"1") };
 }
 

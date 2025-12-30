@@ -45,7 +45,7 @@ pub fn main() !void {
                 }
                 var move_reader = std.io.Reader.fixed(slice orelse unreachable);
 
-                const player = state.next_player();
+                const player = state.current_player();
                 const turn = tackle.parse_turn(&move_reader, player) catch |err| {
                     std.debug.print("Error parsing move: {}\n", .{err});
                     std.debug.print("Please enter a valid move:\n", .{});
@@ -58,12 +58,12 @@ pub fn main() !void {
         pub fn render(state: *const tackle.GameState) !void {
             std.debug.print("\n\n", .{});
             try text_renderer.render_board(&writer.interface, &state.board);
-            const player = state.next_player();
+            const player = state.current_player();
             switch (state.phase) {
-                .opening => std.debug.print("Turn {}, {t} to place a piece.\n", .{ state.turn, player }),
-                .place_gold => std.debug.print("Place the gold piece for Black.\n", .{}),
-                .main => std.debug.print("Turn {}, {t} to move.\n", .{ state.turn, player }),
-                .finished => std.debug.print("Game over.\n", .{}),
+                .opening => std.debug.print("Turn {}, {t}'s turn to place a piece.\n", .{ state.turn, player }),
+                .place_gold => std.debug.print("Place the gold piece for black.\n", .{}),
+                .main => std.debug.print("Turn {}, {t}'s turn to move.\n", .{ state.turn, player }),
+                .finished => std.debug.print("Game over. {t} has won!\n", .{player}),
             }
         }
     };

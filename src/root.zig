@@ -32,9 +32,9 @@ pub fn place_demo_pieces(game_state: *GameState) !void {
     try game_state.place_next_piece(.{ .J, ._6 }); // White
     try game_state.place_next_piece(.{ .E, ._10 }); // Black
     // I want to test placing pieces as well, so leaving these commented out for now.
-    //try game_state.place_next_piece(.{ .C, ._10 }); // White
-    //try game_state.place_next_piece(.{ .A, ._8 }); // Black
-    //try game_state.place_next_piece(.{ .D, ._5 }); // Gold
+    try game_state.place_next_piece(.{ .C, ._10 }); // White
+    try game_state.place_next_piece(.{ .A, ._8 }); // Black
+    try game_state.place_next_piece(.{ .D, ._5 }); // Gold
 }
 
 /// Interface for callbacks to user input and output.
@@ -85,11 +85,15 @@ pub fn run_game_loop(init_state: GameState, ui: UserInterface) !GameState {
             continue;
         };
 
-        game_state.execute_move(game_state.next_player(), turn_move) catch |err| {
+        game_state.execute_move(game_state.current_player(), turn_move) catch |err| {
             std.debug.print("Error executing move '{f}': {}\n", .{ turn_move, err });
             continue;
         };
     }
+
+    ui.render(&game_state) catch |err| {
+        std.debug.print("Error rendering game state: {}\n", .{err});
+    };
 
     return game_state;
 }
@@ -146,7 +150,6 @@ test "game loop runs without errors" {
         .{ .horizontal = .{ .from_x = .J, .y = ._8, .to_x = .D } }, // Black
         .{ .horizontal = .{ .from_x = .J, .y = ._6, .to_x = .D } }, // White
         .{ .vertical = .{ .x = .E, .from_y = ._10, .to_y = ._8 } }, // Black
-        // This would be the winning move, but we don't check for win conditions yet
         .{ .diagonal = .{ .from = .top_left, .distance = 4 } }, // White
     };
 
@@ -164,4 +167,7 @@ test "game loop runs without errors" {
         &.{ .{ .B, ._1 }, .{ .D, ._8 }, .{ .E, ._1 }, .{ .E, ._8 }, .{ .A, ._8 } },
         .{ .D, ._5 },
     );
+
+    try std.testing.expectEqual(final_state.phase, .finished);
+    try std.testing.expectEqual(final_state.turn, 14);
 }

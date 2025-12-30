@@ -58,7 +58,8 @@ pub const GameState = struct {
         };
     }
 
-    pub fn next_player(self: *const GameState) Player {
+    /// Which player's turn it is
+    pub fn current_player(self: *const GameState) Player {
         return if (self.turn % 2 == 0) .white else .black;
     }
 
@@ -82,8 +83,12 @@ pub const GameState = struct {
                 self.turn += 1;
             },
             .main => {
+                const finished = self.job.is_fulfilled(&self.board, self.current_player());
+                if (finished) {
+                    self.phase = .finished;
+                    return;
+                }
                 self.turn += 1;
-                // TODO: Check for win condition
             },
             .finished => unreachable,
         }
@@ -95,7 +100,7 @@ pub const GameState = struct {
         switch (self.phase) {
             .opening => {
                 if (!is_on_border(at)) return error.PieceNotOnBorder;
-                const color: PieceColor = switch (self.next_player()) {
+                const color: PieceColor = switch (self.current_player()) {
                     .white => .white,
                     .black => .black,
                 };
@@ -114,7 +119,7 @@ pub const GameState = struct {
 
     /// Execute a move for the specified player, checking for turn order and phase validity.
     pub fn execute_move(self: *GameState, player: Player, move: Move) !void {
-        if (player != self.next_player()) return error.NotYourTurn;
+        if (player != self.current_player()) return error.NotYourTurn;
         if (self.phase != .main) return error.InvalidPhase;
 
         try self.board.execute_move(player, move);

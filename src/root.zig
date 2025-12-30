@@ -156,10 +156,7 @@ test "game loop runs without errors" {
 
     // This renders the final board state to stdout for visual feedback during testing.
     // It's not strictly necessary for the test itself, but I like it.
-    const stdout = std.fs.File.stdout();
-    var output_buffer: [50]u8 = undefined;
-    var writer = stdout.writer(&output_buffer);
-    try text_renderer.render_board(&writer.interface, &final_state.board);
+    try text_renderer.debug_print_board(&final_state.board);
 
     try board.expectBoardContent(
         &final_state.board,

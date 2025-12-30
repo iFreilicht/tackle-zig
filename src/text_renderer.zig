@@ -129,6 +129,13 @@ pub fn render_board(writer: *std.io.Writer, board: *const Board) !void {
     try writer.flush();
 }
 
+pub fn debug_print_board(board: *const Board) !void {
+    const stdout = std.fs.File.stdout();
+    var output_buffer: [50]u8 = undefined;
+    var writer = stdout.writer(&output_buffer);
+    try render_board(&writer.interface, board);
+}
+
 test "empty board is drawn correctly" {
     const expected =
         \\    ╭───┬───┬───┬───┬───┬───┬───┬───┬───┬───╮

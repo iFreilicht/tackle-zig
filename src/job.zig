@@ -188,7 +188,7 @@ pub const Job = struct {
         });
     }
 
-    pub fn is_fulfilled(self: *const Job, board: *const Board, player: Player) bool {
+    pub fn is_fulfilled(self: Job, board: Board, player: Player) bool {
         const player_color = SquareContent.from_player(player);
         const rotations_to_check = self.rotation_count.to_rotations();
 
@@ -277,7 +277,7 @@ test "is_fulfilled detects turm3 in lower left corner" {
     try board.place_piece(.black, .{ .B, ._2 });
 
     const job = Job.turm3();
-    try expectEqual(true, job.is_fulfilled(&board, .black));
+    try expectEqual(true, job.is_fulfilled(board, .black));
 }
 
 test "is_fulfilled detects treppe3 in center" {
@@ -287,7 +287,7 @@ test "is_fulfilled detects treppe3 in center" {
     try board.place_piece(.white, .{ .G, ._3 });
 
     const job = Job.treppe3();
-    try expectEqual(true, job.is_fulfilled(&board, .white));
+    try expectEqual(true, job.is_fulfilled(board, .white));
 }
 
 test "is_fulfilled detects turm3 in upper right corner" {
@@ -297,7 +297,7 @@ test "is_fulfilled detects turm3 in upper right corner" {
     try board.place_piece(.black, .{ .I, ._7 });
 
     const job = Job.turm3();
-    try expectEqual(true, job.is_fulfilled(&board, .black));
+    try expectEqual(true, job.is_fulfilled(board, .black));
 }
 
 test "is_fulfilled detects turm3 in rotated position in lower left corner" {
@@ -307,7 +307,7 @@ test "is_fulfilled detects turm3 in rotated position in lower left corner" {
     try board.place_piece(.black, .{ .D, ._2 });
 
     const job = Job.turm3();
-    try expectEqual(true, job.is_fulfilled(&board, .black));
+    try expectEqual(true, job.is_fulfilled(board, .black));
 }
 
 test "is_fulfilled detects treppe3 in rotated position in center" {
@@ -317,7 +317,7 @@ test "is_fulfilled detects treppe3 in rotated position in center" {
     try board.place_piece(.white, .{ .D, ._3 });
 
     const job = Job.treppe3();
-    try expectEqual(true, job.is_fulfilled(&board, .white));
+    try expectEqual(true, job.is_fulfilled(board, .white));
 }
 
 test "is_fulfilled detects turm3 in rotated position in upper right corner" {
@@ -327,7 +327,7 @@ test "is_fulfilled detects turm3 in rotated position in upper right corner" {
     try board.place_piece(.black, .{ .G, ._9 });
 
     const job = Job.turm3();
-    try expectEqual(true, job.is_fulfilled(&board, .black));
+    try expectEqual(true, job.is_fulfilled(board, .black));
 }
 
 test "is_fulfilled returns false when job not fulfilled" {
@@ -337,7 +337,7 @@ test "is_fulfilled returns false when job not fulfilled" {
     // Missing third piece for turm3
 
     const job = Job.turm3();
-    try expectEqual(false, job.is_fulfilled(&board, .white));
+    try expectEqual(false, job.is_fulfilled(board, .white));
 }
 
 test "is_fulfilled detects bluete job" {
@@ -348,7 +348,7 @@ test "is_fulfilled detects bluete job" {
     try board.place_piece(.white, .{ .E, ._3 });
 
     const job = Job.bluete();
-    try expectEqual(true, job.is_fulfilled(&board, .white));
+    try expectEqual(true, job.is_fulfilled(board, .white));
 }
 
 test "job_is_fullfilled detects bluete job when center contains opponent piece" {
@@ -360,7 +360,7 @@ test "job_is_fullfilled detects bluete job when center contains opponent piece" 
     try board.place_piece(.white, .{ .E, ._3 });
 
     const job = Job.bluete();
-    try expectEqual(true, job.is_fulfilled(&board, .white));
+    try expectEqual(true, job.is_fulfilled(board, .white));
 }
 
 test "is_fulfilled returns false when center of bluete is filled" {
@@ -372,7 +372,7 @@ test "is_fulfilled returns false when center of bluete is filled" {
     try board.place_piece(.white, .{ .E, ._3 });
 
     const job = Job.bluete();
-    try expectEqual(false, job.is_fulfilled(&board, .white));
+    try expectEqual(false, job.is_fulfilled(board, .white));
 }
 
 test "is_fulfilled detects kreuz job rotated 0 degrees" {
@@ -385,7 +385,7 @@ test "is_fulfilled detects kreuz job rotated 0 degrees" {
     try board.place_piece(.black, .{ .C, ._2 });
 
     const job = Job.kreuz();
-    try expectEqual(true, job.is_fulfilled(&board, .black));
+    try expectEqual(true, job.is_fulfilled(board, .black));
 }
 
 test "is_fulfilled detects kreuz job rotated 90 degrees" {
@@ -398,7 +398,7 @@ test "is_fulfilled detects kreuz job rotated 90 degrees" {
     try board.place_piece(.black, .{ .E, ._8 });
 
     const job = Job.kreuz();
-    try expectEqual(true, job.is_fulfilled(&board, .black));
+    try expectEqual(true, job.is_fulfilled(board, .black));
 }
 
 test "is_fulfilled detects kreuz job rotated 180 degrees" {
@@ -411,7 +411,7 @@ test "is_fulfilled detects kreuz job rotated 180 degrees" {
     try board.place_piece(.black, .{ .H, ._5 });
 
     const job = Job.kreuz();
-    try expectEqual(true, job.is_fulfilled(&board, .black));
+    try expectEqual(true, job.is_fulfilled(board, .black));
 }
 
 test "is_fulfilled detects kreuz job rotated 270 degrees" {
@@ -424,5 +424,5 @@ test "is_fulfilled detects kreuz job rotated 270 degrees" {
     try board.place_piece(.black, .{ .F, ._8 });
 
     const job = Job.kreuz();
-    try expectEqual(true, job.is_fulfilled(&board, .black));
+    try expectEqual(true, job.is_fulfilled(board, .black));
 }

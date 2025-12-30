@@ -36,7 +36,7 @@ pub fn main() !void {
             }
         }
 
-        pub fn get_next_move(state: *const tackle.GameState) !tackle.Move {
+        pub fn get_next_move(state: tackle.GameState) !tackle.Move {
             while (true) {
                 std.debug.print("Enter your move:\n", .{});
                 var slice: ?[]const u8 = null;
@@ -55,9 +55,9 @@ pub fn main() !void {
             }
         }
 
-        pub fn render(state: *const tackle.GameState) !void {
+        pub fn render(state: tackle.GameState) !void {
             std.debug.print("\n\n", .{});
-            try text_renderer.render_board(&writer.interface, &state.board);
+            try text_renderer.render_board(&writer.interface, state.board);
             const player = state.current_player();
             switch (state.phase) {
                 .opening => std.debug.print("Turn {}, {t}'s turn to place a piece.\n", .{ state.turn, player }),
@@ -73,7 +73,7 @@ pub fn main() !void {
 
     try tackle.place_demo_pieces(&state);
 
-    try ui.render(&state);
+    try ui.render(state);
 
     _ = try tackle.run_game_loop(state, ui.interface);
 }

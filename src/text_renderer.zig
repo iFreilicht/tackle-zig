@@ -59,7 +59,7 @@ fn iszero(i: usize) bool {
     return i == 0;
 }
 
-pub fn render_board(writer: *std.io.Writer, board: *const Board) !void {
+pub fn render_board(writer: *std.io.Writer, board: Board) !void {
     var row_number: u8 = board_size;
 
     for (0..last_i) |i| {
@@ -129,7 +129,7 @@ pub fn render_board(writer: *std.io.Writer, board: *const Board) !void {
     try writer.flush();
 }
 
-pub fn debug_print_board(board: *const Board) !void {
+pub fn debug_print_board(board: Board) !void {
     const stdout = std.fs.File.stdout();
     var output_buffer: [50]u8 = undefined;
     var writer = stdout.writer(&output_buffer);
@@ -165,7 +165,7 @@ test "empty board is drawn correctly" {
 
     var buffer: [2134:0]u8 = undefined;
     var writer = std.io.Writer.fixed(&buffer);
-    try render_board(&writer, &.{});
+    try render_board(&writer, .{});
 
     try std.testing.expectEqualSlices(u8, &buffer, expected);
 }
@@ -209,6 +209,6 @@ test "board with a few pieces is drawn correctly" {
     try board.place_piece(.black, .{ .J, ._1 });
     var buffer: [2150:0]u8 = undefined;
     var writer = std.io.Writer.fixed(&buffer);
-    try render_board(&writer, &board);
+    try render_board(&writer, board);
     try std.testing.expectEqualStrings(&buffer, expected);
 }

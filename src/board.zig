@@ -219,7 +219,7 @@ pub const Board = struct {
     /// considering all game rules about blocks, piece colors, and pushing opponent pieces.
     /// It is guaranteed that the returned `MoveList` contains valid input for `move_many_pieces` and that
     /// performing that move will not violate any game rules.
-    fn get_max_move_list(self: *const Board, start: Position, direction: Direction, position_buffer: []Position) MoveList {
+    fn get_max_move_list(self: Board, start: Position, direction: Direction, position_buffer: []Position) MoveList {
         var distance: u4 = 0;
         var current_pos = start;
         const EMPTY = MoveList{ .distance = 0, .block_length = 0, .positions = position_buffer[0..0] };
@@ -285,12 +285,12 @@ pub const Board = struct {
         };
     }
 
-    pub fn get_square(self: *const Board, at: Position) SquareContent {
+    pub fn get_square(self: Board, at: Position) SquareContent {
         const idx = index(at);
         return self.squares[idx];
     }
 
-    pub fn is_square_empty(self: *const Board, at: Position) bool {
+    pub fn is_square_empty(self: Board, at: Position) bool {
         return self.get_square(at) == .empty;
     }
 
@@ -360,7 +360,7 @@ pub const Board = struct {
 /// Check whether the board has exactly the specified pieces in the specified positions.
 /// Also checks that the internal data invariants are upheld.
 /// This function is mostly useful for testing.
-pub fn expectBoardContent(board: *const Board, white_pieces: []const Position, black_pieces: []const Position, gold_piece: ?Position) !void {
+pub fn expectBoardContent(board: Board, white_pieces: []const Position, black_pieces: []const Position, gold_piece: ?Position) !void {
     // Fail fast if counts don't match
     if (board.white_count != white_pieces.len) return error.WhiteCountDiffers;
     if (board.black_count != black_pieces.len) return error.BlackCountDiffers;
@@ -452,7 +452,7 @@ test expectBoardContent {
     const black_positions: [2]Position = .{ .{ .A, ._4 }, .{ .F, ._3 } };
     const gold_position: Position = .{ .E, ._5 };
 
-    try expectBoardContent(&board, &white_positions, &black_positions, gold_position);
+    try expectBoardContent(board, &white_positions, &black_positions, gold_position);
 
     // Test for all the errors that can occur. These follow the same order that the
     // expected errors are returned in in the function under test to make it easier
@@ -463,7 +463,7 @@ test expectBoardContent {
     try broken_board1.remove_piece(.{ .A, ._1 });
     try expectError(
         error.WhiteCountDiffers,
-        expectBoardContent(&broken_board1, &white_positions, &black_positions, gold_position),
+        expectBoardContent(broken_board1, &white_positions, &black_positions, gold_position),
     );
 
     // Remove black piece without breaking invariants
@@ -471,7 +471,7 @@ test expectBoardContent {
     try broken_board2.remove_piece(.{ .F, ._3 });
     try expectError(
         error.BlackCountDiffers,
-        expectBoardContent(&broken_board2, &white_positions, &black_positions, gold_position),
+        expectBoardContent(broken_board2, &white_positions, &black_positions, gold_position),
     );
 
     // Move white piece without breaking invariants
@@ -479,7 +479,7 @@ test expectBoardContent {
     try broken_board3.move_single_piece(.{ .A, ._1 }, .{ .B, ._1 });
     try expectError(
         error.SquareDoesNotContainWhitePiece,
-        expectBoardContent(&broken_board3, &white_positions, &black_positions, gold_position),
+        expectBoardContent(broken_board3, &white_positions, &black_positions, gold_position),
     );
 
     // Move black piece without breaking invariants
@@ -487,7 +487,7 @@ test expectBoardContent {
     try broken_board4.move_single_piece(.{ .F, ._3 }, .{ .F, ._4 });
     try expectError(
         error.SquareDoesNotContainBlackPiece,
-        expectBoardContent(&broken_board4, &white_positions, &black_positions, gold_position),
+        expectBoardContent(broken_board4, &white_positions, &black_positions, gold_position),
     );
 
     // Move gold piece without breaking invariants
@@ -497,7 +497,7 @@ test expectBoardContent {
     broken_board5.gold_piece = Board.index(.{ .E, ._6 });
     try expectError(
         error.SquareDoesNotContainGoldPiece,
-        expectBoardContent(&broken_board5, &white_positions, &black_positions, gold_position),
+        expectBoardContent(broken_board5, &white_positions, &black_positions, gold_position),
     );
 
     // Add white piece so the count is incorrect
@@ -505,7 +505,7 @@ test expectBoardContent {
     broken_board6.squares[Board.index(.{ .C, ._1 })] = .white;
     try expectError(
         error.WhiteCountInvariantBroken,
-        expectBoardContent(&broken_board6, &white_positions, &black_positions, gold_position),
+        expectBoardContent(broken_board6, &white_positions, &black_positions, gold_position),
     );
 
     // Modify white piece positions so it's inconsistent with the squares array
@@ -513,7 +513,7 @@ test expectBoardContent {
     broken_board7.white_pieces[0] = Board.index(.{ .C, ._1 });
     try expectError(
         error.WhitePositionsInvariantBroken,
-        expectBoardContent(&broken_board7, &white_positions, &black_positions, gold_position),
+        expectBoardContent(broken_board7, &white_positions, &black_positions, gold_position),
     );
 
     // Add black piece so the count is incorrect
@@ -521,7 +521,7 @@ test expectBoardContent {
     broken_board8.squares[Board.index(.{ .G, ._3 })] = .black;
     try expectError(
         error.BlackCountInvariantBroken,
-        expectBoardContent(&broken_board8, &white_positions, &black_positions, gold_position),
+        expectBoardContent(broken_board8, &white_positions, &black_positions, gold_position),
     );
 
     // Modify black piece positions so it's inconsistent with the squares array
@@ -529,7 +529,7 @@ test expectBoardContent {
     broken_board9.black_pieces[0] = Board.index(.{ .G, ._3 });
     try expectError(
         error.BlackPositionsInvariantBroken,
-        expectBoardContent(&broken_board9, &white_positions, &black_positions, gold_position),
+        expectBoardContent(broken_board9, &white_positions, &black_positions, gold_position),
     );
 
     // Add second gold piece
@@ -537,7 +537,7 @@ test expectBoardContent {
     broken_board10.squares[Board.index(.{ .E, ._6 })] = .gold;
     try expectError(
         error.GoldCountInvariantBroken,
-        expectBoardContent(&broken_board10, &white_positions, &black_positions, gold_position),
+        expectBoardContent(broken_board10, &white_positions, &black_positions, gold_position),
     );
 
     // Modify gold piece position so it's inconsistent with the gold_piece field
@@ -545,7 +545,7 @@ test expectBoardContent {
     broken_board11.gold_piece = Board.index(.{ .E, ._6 });
     try expectError(
         error.GoldPositionInvariantBroken,
-        expectBoardContent(&broken_board11, &white_positions, &black_positions, gold_position),
+        expectBoardContent(broken_board11, &white_positions, &black_positions, gold_position),
     );
 
     // Remove gold piece from board but not from gold_piece field
@@ -553,7 +553,7 @@ test expectBoardContent {
     broken_board12.squares[Board.index(.{ .E, ._5 })] = .empty;
     try expectError(
         error.GoldPieceNotEmpty,
-        expectBoardContent(&broken_board12, &white_positions, &black_positions, null),
+        expectBoardContent(broken_board12, &white_positions, &black_positions, null),
     );
 }
 
@@ -575,7 +575,7 @@ test "move many pieces horizontal right" {
     try board.move_many_pieces(start_positions[0..4], .right, 2);
 
     try expectBoardContent(
-        &board,
+        board,
         &.{ .{ .D, ._5 }, .{ .E, ._5 } },
         &.{ .{ .G, ._5 }, .{ .H, ._5 } },
         null,
@@ -600,7 +600,7 @@ test "move many pieces horizontal left" {
     try board.move_many_pieces(start_positions[0..4], .left, 4);
 
     try expectBoardContent(
-        &board,
+        board,
         &.{ .{ .D, ._3 }, .{ .C, ._3 } },
         &.{ .{ .F, ._3 }, .{ .E, ._3 } },
         null,
@@ -625,7 +625,7 @@ test "move many pieces vertical up" {
     try board.move_many_pieces(start_positions[0..4], .up, 6);
 
     try expectBoardContent(
-        &board,
+        board,
         &.{ .{ .D, ._7 }, .{ .D, ._8 } },
         &.{ .{ .D, ._9 }, .{ .D, ._10 } },
         null,
@@ -652,7 +652,7 @@ test "move many pieces vertical down" {
     try board.move_many_pieces(start_positions[0..5], .down, 5);
 
     try expectBoardContent(
-        &board,
+        board,
         &.{ .{ .F, ._2 }, .{ .F, ._1 } },
         &.{ .{ .F, ._5 }, .{ .F, ._4 }, .{ .F, ._3 } },
         null,
@@ -863,7 +863,7 @@ test "execute move diagonally" {
     try board.place_piece(.black, .{ .I, ._8 });
 
     try expectBoardContent(
-        &board,
+        board,
         &.{top_left_pos},
         &.{.{ .I, ._8 }},
         null,
@@ -876,7 +876,7 @@ test "execute move diagonally" {
     try board.execute_move(.white, move);
 
     try expectBoardContent(
-        &board,
+        board,
         &.{.{ .D, ._7 }},
         &.{.{ .I, ._8 }},
         null,
@@ -897,7 +897,7 @@ test "execute move diagonally with obstruction error" {
     try expectError(error.PathBlocked, board.execute_move(.white, move));
 
     try expectBoardContent(
-        &board,
+        board,
         &.{bottom_left_pos},
         &.{.{ .C, ._3 }},
         null,
@@ -926,7 +926,7 @@ test "execute move horizontally with 2x3 block pushing 3 irregular pieces" {
     try board.execute_move(.white, move);
 
     try expectBoardContent(
-        &board,
+        board,
         &.{ .{ .E, ._5 }, .{ .E, ._6 }, .{ .F, ._5 }, .{ .F, ._6 }, .{ .G, ._5 }, .{ .G, ._6 } },
         &.{ .{ .H, ._5 }, .{ .H, ._6 }, .{ .I, ._5 } },
         null,
@@ -952,7 +952,7 @@ test "execute move horizontally with invalid block shape error" {
     );
 
     try expectBoardContent(
-        &board,
+        board,
         &.{ .{ .B, ._5 }, .{ .B, ._6 }, .{ .C, ._5 } },
         &.{},
         null,
@@ -977,7 +977,7 @@ test "execute move horizontally with block cannot move sideways error" {
     );
 
     try expectBoardContent(
-        &board,
+        board,
         &.{ .{ .B, ._5 }, .{ .B, ._6 } },
         &.{},
         null,
@@ -1006,7 +1006,7 @@ test "execute move vertically with 3x2 block pushing 2 irregular pieces" {
     try board.execute_move(.black, move);
 
     try expectBoardContent(
-        &board,
+        board,
         &.{ .{ .F, ._2 }, .{ .F, ._1 }, .{ .G, ._2 } },
         &.{ .{ .F, ._5 }, .{ .F, ._4 }, .{ .F, ._3 }, .{ .G, ._5 }, .{ .G, ._4 }, .{ .G, ._3 } },
         null,
@@ -1032,7 +1032,7 @@ test "execute move vertically with invalid block shape error" {
     );
 
     try expectBoardContent(
-        &board,
+        board,
         &.{},
         &.{ .{ .H, ._8 }, .{ .H, ._9 }, .{ .I, ._9 } },
         null,
@@ -1057,7 +1057,7 @@ test "execute move vertically with block cannot move sideways error" {
     );
 
     try expectBoardContent(
-        &board,
+        board,
         &.{},
         &.{ .{ .D, ._8 }, .{ .E, ._8 } },
         null,

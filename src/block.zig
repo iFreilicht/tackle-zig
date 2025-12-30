@@ -33,7 +33,7 @@ pub const Block = struct {
     /// ordered from the front of the block to the back. The front is defined as the
     /// side which the block is moving towards.
     /// This does not check whether the block is actually allowed to move in that direction!
-    pub fn to_list(self: *const Block, buffer: []Position, direction: Direction) []Position {
+    pub fn to_list(self: Block, buffer: []Position, direction: Direction) []Position {
         var index: usize = 0;
 
         for (0..self.width) |dx| {

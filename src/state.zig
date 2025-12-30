@@ -59,11 +59,11 @@ pub const GameState = struct {
     }
 
     /// Which player's turn it is
-    pub fn current_player(self: *const GameState) Player {
+    pub fn current_player(self: GameState) Player {
         return if (self.turn % 2 == 0) .white else .black;
     }
 
-    pub fn pieces_per_player(self: *const GameState) u4 {
+    pub fn pieces_per_player(self: GameState) u4 {
         return self.job.total_pieces + 2;
     }
 
@@ -83,7 +83,7 @@ pub const GameState = struct {
                 self.turn += 1;
             },
             .main => {
-                const finished = self.job.is_fulfilled(&self.board, self.current_player());
+                const finished = self.job.is_fulfilled(self.board, self.current_player());
                 if (finished) {
                     self.phase = .finished;
                     return;

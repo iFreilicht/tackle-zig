@@ -45,10 +45,10 @@ pub const UserInterface = struct {
     get_next_placement: fn () anyerror!Position,
 
     /// Ask the user for the next move.
-    get_next_move: fn (state: *const GameState) anyerror!Move,
+    get_next_move: fn (state: GameState) anyerror!Move,
 
     /// Render the current game state.
-    render: fn (state: *const GameState) anyerror!void,
+    render: fn (state: GameState) anyerror!void,
 };
 
 /// Runs the main game loop, deferring to `ui` for input and output.
@@ -56,7 +56,7 @@ pub fn run_game_loop(init_state: GameState, ui: UserInterface) !GameState {
     var game_state = init_state;
 
     while (game_state.phase != .finished) {
-        ui.render(&game_state) catch |err| {
+        ui.render(game_state) catch |err| {
             std.debug.print("Error rendering game state: {}\n", .{err});
         };
 
@@ -74,7 +74,7 @@ pub fn run_game_loop(init_state: GameState, ui: UserInterface) !GameState {
             continue;
         }
 
-        const turn_move = ui.get_next_move(&game_state) catch |err| {
+        const turn_move = ui.get_next_move(game_state) catch |err| {
             // When simulating games, we might run out of moves, even if the
             // game is not finished yet. In that case, we just end the game.
             if (err == error.NoMoreMoves) {
@@ -91,7 +91,7 @@ pub fn run_game_loop(init_state: GameState, ui: UserInterface) !GameState {
         };
     }
 
-    ui.render(&game_state) catch |err| {
+    ui.render(game_state) catch |err| {
         std.debug.print("Error rendering game state: {}\n", .{err});
     };
 
@@ -115,7 +115,7 @@ fn SimulatedUserInterface(placements: []const Position, moves: []const Move) typ
             return next_placement;
         }
 
-        pub fn get_next_move(_: *const GameState) !Move {
+        pub fn get_next_move(_: GameState) !Move {
             if (moves_executed >= moves.len) {
                 return error.NoMoreMoves;
             }
@@ -124,7 +124,7 @@ fn SimulatedUserInterface(placements: []const Position, moves: []const Move) typ
             return next_move;
         }
 
-        pub fn render(_: *const GameState) !void {}
+        pub fn render(_: GameState) !void {}
     };
 }
 
@@ -159,10 +159,10 @@ test "game loop runs without errors" {
 
     // This renders the final board state to stdout for visual feedback during testing.
     // It's not strictly necessary for the test itself, but I like it.
-    try text_renderer.debug_print_board(&final_state.board);
+    try text_renderer.debug_print_board(final_state.board);
 
     try board.expectBoardContent(
-        &final_state.board,
+        final_state.board,
         &.{ .{ .C, ._10 }, .{ .C, ._6 }, .{ .D, ._6 }, .{ .E, ._6 }, .{ .J, ._9 } },
         &.{ .{ .B, ._1 }, .{ .D, ._8 }, .{ .E, ._1 }, .{ .E, ._8 }, .{ .A, ._8 } },
         .{ .D, ._5 },

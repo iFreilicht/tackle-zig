@@ -28,6 +28,7 @@ const validate_color_when_placing = enums.validate_color_when_placing;
 const move_position = position.move_position;
 const move_position_if_possible = position.move_position_if_possible;
 const is_on_border = position.is_on_border;
+const is_in_core = position.is_in_core;
 
 /// Representation of the game board and the pieces on it.
 pub const Board = struct {
@@ -60,6 +61,7 @@ pub const Board = struct {
 
     /// Place a piece on the board. This is a low-level function that only checks
     /// for data invariants, not game rules.
+    /// For a game-rule-compliant placement, use `execute_placement` instead.
     pub fn place_piece(self: *Board, color: PieceColor, at: Position) !void {
         const idx = index(at);
         if (self.squares[idx] != .empty) return error.SquareOccupied;
@@ -84,8 +86,9 @@ pub const Board = struct {
     /// Remove a piece from the board. Only happens during a worm move, undo, or
     /// when the gold piece is removed. This is a low-level function that only checks
     /// for data invariants, not game rules.
-    /// Do not use `remove_piece` and `place_piece` to move pieces around, use
-    /// `move_single_piece` instead!
+    /// Do not use `remove_piece` and `place_piece` to move pieces around!
+    /// Use `move_single_piece` for board logic instead, or use
+    /// `execute_move` for game-rule-compliant moves.
     pub fn remove_piece(self: *Board, from: Position) !void {
         const idx = index(from);
 
@@ -292,6 +295,44 @@ pub const Board = struct {
 
     pub fn is_square_empty(self: Board, at: Position) bool {
         return self.get_square(at) == .empty;
+    }
+
+    /// Place a piece at the specified position, checking for violations of game rules.
+    pub fn execute_placement(board: *Board, color: PieceColor, at: Position) !void {
+        switch (color) {
+            .white, .black => {
+                if (!is_on_border(at)) return error.PieceNotOnBorder;
+                const c = SquareContent.from_color(color);
+
+                // Check neighboring squares for same-color pieces
+                if (at.@"0" == .A or at.@"0" == .J) {
+                    const up_pos = move_position_if_possible(at, .up, 1);
+                    const down_pos = move_position_if_possible(at, .down, 1);
+                    if (up_pos) |p| {
+                        if (board.get_square(p) == c) return error.PieceBlockedByUpperNeighbor;
+                    }
+                    if (down_pos) |p| {
+                        if (board.get_square(p) == c) return error.PieceBlockedByLowerNeighbor;
+                    }
+                }
+                if (at.@"1" == ._1 or at.@"1" == ._10) {
+                    const left_pos = move_position_if_possible(at, .left, 1);
+                    const right_pos = move_position_if_possible(at, .right, 1);
+                    if (left_pos) |p| {
+                        if (board.get_square(p) == c) return error.PieceBlockedByLeftNeighbor;
+                    }
+                    if (right_pos) |p| {
+                        if (board.get_square(p) == c) return error.PieceBlockedByRightNeighbor;
+                    }
+                }
+            },
+            .gold => {
+                if (!is_in_core(at)) return error.GoldPieceNotInCore;
+                if (board.gold_piece != Board.GOLD_EMPTY) return error.GoldPieceAlreadyPlaced;
+            },
+        }
+
+        try board.place_piece(color, at);
     }
 
     /// Move a piece according to the specified move, checking for
@@ -853,6 +894,54 @@ test "move single piece errors" {
     try expectError(error.MovingGoldNotAllowed, board.move_single_piece(.{ .E, ._6 }, .{ .E, ._7 }));
     try expectEqual(.gold, board.get_square(.{ .E, ._6 }));
     try expectEqual(board.gold_piece, 45);
+}
+
+test "execute placement" {
+    var board: Board = .{};
+
+    try board.execute_placement(.white, .{ .A, ._1 });
+    try board.execute_placement(.black, .{ .J, ._10 });
+    try board.execute_placement(.gold, .{ .E, ._5 });
+
+    try expectBoardContent(
+        board,
+        &.{.{ .A, ._1 }},
+        &.{.{ .J, ._10 }},
+        .{ .E, ._5 },
+    );
+}
+
+test "execute placement errors" {
+    var board: Board = .{};
+
+    try board.execute_placement(.white, .{ .A, ._1 });
+    try expectError(
+        error.PieceBlockedByLowerNeighbor,
+        board.execute_placement(.white, .{ .A, ._2 }),
+    );
+
+    try expectError(
+        error.PieceBlockedByLeftNeighbor,
+        board.execute_placement(.white, .{ .B, ._1 }),
+    );
+
+    try board.execute_placement(.black, .{ .B, ._10 });
+    try expectError(
+        error.PieceBlockedByRightNeighbor,
+        board.execute_placement(.black, .{ .A, ._10 }),
+    );
+
+    try board.execute_placement(.white, .{ .J, ._2 });
+    try expectError(
+        error.PieceBlockedByUpperNeighbor,
+        board.execute_placement(.white, .{ .J, ._1 }),
+    );
+
+    try board.execute_placement(.gold, .{ .E, ._5 });
+    try expectError(
+        error.GoldPieceAlreadyPlaced,
+        board.execute_placement(.gold, .{ .F, ._5 }),
+    );
 }
 
 test "execute move diagonally" {

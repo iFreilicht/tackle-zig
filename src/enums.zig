@@ -15,7 +15,15 @@ pub const Player = enum(u2) { white = 1, black = 2 };
 
 /// Piece colors. Equivalent to Player, but with additional 'gold' color.
 /// The gold piece is placed by the black player but can't be moved.
-pub const PieceColor = enum(u2) { white = 1, black = 2, gold = 3 };
+pub const PieceColor = enum(u2) {
+    white = 1,
+    black = 2,
+    gold = 3,
+
+    pub fn from_player(p: Player) @This() {
+        return @enumFromInt(@intFromEnum(p));
+    }
+};
 
 /// Content of a square on the board. Equivalent to PieceColor, but with additional 'empty' value.
 pub const SquareContent = enum(u2) {
@@ -36,7 +44,7 @@ pub const SquareContent = enum(u2) {
 /// Validate that the piece being moved belongs to the player
 pub fn validate_color(player: Player, color: SquareContent) !void {
     switch (player) {
-        .white => if (color != .white) return error.IllegalMove,
-        .black => if (color != .black) return error.IllegalMove,
+        .white => if (color != .white) return error.WhiteCannotMoveBlackPiece,
+        .black => if (color != .black) return error.BlackCannotMoveWhitePiece,
     }
 }

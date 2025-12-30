@@ -26,8 +26,6 @@ const Position = position.Position;
 const Move = move_module.Move;
 const BlockSize = position.BlockSize;
 const Direction = enums.Direction;
-const is_on_border = position.is_on_border;
-const is_in_core = position.is_in_core;
 const move_position = position.move_position;
 const move_position_if_possible = position.move_position_if_possible;
 const pos_from_int = position.pos_from_int;
@@ -99,16 +97,11 @@ pub const GameState = struct {
     pub fn place_next_piece(self: *GameState, at: Position) !void {
         switch (self.phase) {
             .opening => {
-                if (!is_on_border(at)) return error.PieceNotOnBorder;
-                const color: PieceColor = switch (self.current_player()) {
-                    .white => .white,
-                    .black => .black,
-                };
-                try self.board.place_piece(color, at);
+                const color = PieceColor.from_player(self.current_player());
+                try self.board.execute_placement(color, at);
             },
             .place_gold => {
-                if (!is_in_core(at)) return error.GoldNotInCore;
-                try self.board.place_piece(.gold, at);
+                try self.board.execute_placement(.gold, at);
             },
             .main => return error.InvalidPhase,
             .finished => return error.InvalidPhase,

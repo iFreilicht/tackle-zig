@@ -32,9 +32,9 @@ pub fn place_demo_pieces(game_state: *GameState) !void {
     try game_state.place_next_piece(.{ .J, ._6 }); // White
     try game_state.place_next_piece(.{ .E, ._10 }); // Black
     // I want to test placing pieces as well, so leaving these commented out for now.
-    try game_state.place_next_piece(.{ .C, ._10 }); // White
-    try game_state.place_next_piece(.{ .A, ._8 }); // Black
-    try game_state.place_next_piece(.{ .D, ._5 }); // Gold
+    //try game_state.place_next_piece(.{ .C, ._10 }); // White
+    //try game_state.place_next_piece(.{ .A, ._8 }); // Black
+    //try game_state.place_next_piece(.{ .D, ._5 }); // Gold
 }
 
 /// Interface for callbacks to user input and output.

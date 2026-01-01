@@ -5,6 +5,8 @@ const expectEqual = std.testing.expectEqual;
 
 const tackle = @import("root.zig");
 
+const max_pieces_in_job = tackle.constants.max_pieces_in_job;
+const max_job_edge_length = tackle.constants.max_job_edge_length;
 const max_job_size = tackle.constants.max_job_size;
 const Board = tackle.Board;
 const SquareContent = tackle.enums.SquareContent;
@@ -24,7 +26,7 @@ height: u3,
 /// Unforunately, this array needs to cover every square of the court so a
 /// job like treppe8 can be represented, even though most jobs will only
 /// use a small portion of it.
-requirements: [max_job_size * max_job_size]JobRequirement,
+requirements: [max_job_size]JobRequirement,
 total_pieces: u4, // Maximum of 16 pieces, see also `max_pieces_per_player`
 rotation_count: RotationCount,
 
@@ -54,12 +56,30 @@ pub fn init(
     width: u3,
     height: u3,
     requirements: []const JobRequirement,
-) Job {
-    std.debug.assert(width > 0);
-    std.debug.assert(height > 0);
+) !Job {
+    if (width == 0 or height == 0) {
+        return error.JobDimensionsCannotBeZero;
+    }
+    if (width > max_job_edge_length) {
+        return error.JobWidthTooLarge;
+    }
+    if (height > max_job_edge_length) {
+        return error.JobHeightTooLarge;
+    }
+    if (@as(u6, width) * @as(u6, height) > max_job_size) {
+        return error.JobSizeTooLarge;
+    }
+    if (requirements.len > max_job_size) {
+        return error.JobRequirementsTooLong;
+    }
 
     const total_pieces: u4 = @intCast(std.mem.count(JobRequirement, requirements, &.{.piece}));
-    std.debug.assert(total_pieces > 0);
+    if (total_pieces < 3) {
+        return error.JobMustRequireAtLeastThreePieces;
+    }
+    if (total_pieces > max_pieces_in_job) {
+        return error.JobHasTooManyPieces;
+    }
 
     const unique_rotations: RotationCount = if (isSymmetric90(
         width,
@@ -79,7 +99,7 @@ pub fn init(
     var job = Job{
         .width = width,
         .height = height,
-        .requirements = .{.any} ** (max_job_size * max_job_size),
+        .requirements = .{.any} ** max_job_size,
         .total_pieces = total_pieces,
         .rotation_count = unique_rotations,
     };
@@ -119,7 +139,7 @@ fn isSymmetric180(width: u3, height: u3, requirements: []const JobRequirement) b
 pub fn turm3() Job {
     return init(1, 3, &.{
         .piece, .piece, .piece,
-    });
+    }) catch unreachable;
 }
 
 pub fn treppe3() Job {
@@ -127,13 +147,13 @@ pub fn treppe3() Job {
         .any,   .any,   .piece,
         .any,   .piece, .any,
         .piece, .any,   .any,
-    });
+    }) catch unreachable;
 }
 
 pub fn turm4() Job {
     return init(1, 4, &.{
         .piece, .piece, .piece, .piece,
-    });
+    }) catch unreachable;
 }
 
 pub fn treppe4() Job {
@@ -142,13 +162,13 @@ pub fn treppe4() Job {
         .any,   .any,   .piece, .any,
         .any,   .piece, .any,   .any,
         .piece, .any,   .any,   .any,
-    });
+    }) catch unreachable;
 }
 
 pub fn quadrat() Job {
     return init(2, 2, &.{
         .piece, .piece, .piece, .piece,
-    });
+    }) catch unreachable;
 }
 
 pub fn bluete() Job {
@@ -156,7 +176,7 @@ pub fn bluete() Job {
         .any,   .piece, .any,
         .piece, .other, .piece,
         .any,   .piece, .any,
-    });
+    }) catch unreachable;
 }
 
 pub fn fisch() Job {
@@ -164,7 +184,7 @@ pub fn fisch() Job {
         .any,   .piece, .piece,
         .any,   .piece, .piece,
         .piece, .any,   .any,
-    });
+    }) catch unreachable;
 }
 
 pub fn kreuz() Job {
@@ -173,7 +193,7 @@ pub fn kreuz() Job {
         .piece, .piece, .piece,
         .any,   .piece, .any,
         .any,   .piece, .any,
-    });
+    }) catch unreachable;
 }
 
 pub fn vogel() Job {
@@ -182,7 +202,7 @@ pub fn vogel() Job {
         .any,   .piece, .piece, .any,
         .any,   .piece, .piece, .any,
         .piece, .any,   .any,   .any,
-    });
+    }) catch unreachable;
 }
 
 pub fn isFulfilled(self: Job, board: Board, player: Player) bool {

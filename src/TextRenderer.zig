@@ -2,8 +2,7 @@ const std = @import("std");
 
 const tackle = @import("root.zig");
 
-const board_size = tackle.constants.board_size;
-const max_job_size = tackle.constants.max_job_size;
+const board_edge_length = tackle.constants.board_edge_length;
 const column_letters = tackle.constants.column_letters;
 
 const Board = tackle.Board;
@@ -30,8 +29,8 @@ const margin = 4;
 const margin_fmt = "{:3} ";
 const row_height = 2;
 const col_width = 4;
-const last_i = board_size * row_height + 1;
-const last_j = board_size * col_width + 1;
+const last_i = board_edge_length * row_height + 1;
+const last_j = board_edge_length * col_width + 1;
 
 fn renderPosition(i: usize, last: comptime_int, grid_size: comptime_int) RenderPosition {
     if (i == 0) {
@@ -53,7 +52,7 @@ fn position(i: usize, j: usize) Position {
 }
 
 pub fn renderBoard(writer: *std.io.Writer, board: Board) !void {
-    var row_number: u8 = board_size;
+    var row_number: u8 = board_edge_length;
 
     for (0..last_i) |i| {
         const i_pos = renderPosition(i, last_i, row_height);

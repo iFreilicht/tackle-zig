@@ -235,15 +235,13 @@ pub fn isInCore(position: Position) bool {
 
 /// Size of a block perpendicular to the move direction (2-4, 0 means no block)
 /// Blocks can easily be longer than 4 in the move direction, but this is not represented
-/// in the notation anyway. 4 is the maximum because for a block of 5 to move perpendicularly
-/// to the side that is 5 units wide, the block would have to contain 25 pieces.
-/// However, a maximum of 18 pieces can be placed per player, so a block of 5 is impossible.
-/// A block of 4 is also unlikely to happen in regular play, but still possible in theory.
+/// in the notation anyway. 3 is the maximum because for a block of 4 to move perpendicularly
+/// to the side that is 4 units wide, the block would have to contain 16 pieces.
+/// However, a maximum of 12 pieces can be placed per player, so a block of 4 is impossible.
 pub const BlockSize = enum(u2) {
     no_block = 0,
     _2 = 1,
     _3 = 2,
-    _4 = 3,
 
     /// Return the number of pieces this block size represents.
     pub fn numPieces(self: @This()) u4 {

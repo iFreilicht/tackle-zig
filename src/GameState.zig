@@ -8,8 +8,6 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualSlices = std.testing.expectEqualSlices;
 
-const max_job_size = tackle.constants.max_job_size;
-
 const Board = tackle.Board;
 const Job = tackle.Job;
 

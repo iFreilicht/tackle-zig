@@ -11,10 +11,6 @@ pub const position = @import("position.zig");
 pub const GameState = @import("GameState.zig");
 pub const TextRenderer = @import("TextRenderer.zig");
 
-const board_size = constants.board_size;
-const max_job_size = constants.max_job_size;
-const column_letters = constants.column_letters;
-
 pub const Position = position.Position;
 pub const Move = move.Move;
 pub const parsePosition = notation.parsePosition;

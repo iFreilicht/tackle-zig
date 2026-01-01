@@ -10,6 +10,7 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualSlices = std.testing.expectEqualSlices;
 
+const board_edge_length = tackle.constants.board_edge_length;
 const board_size = tackle.constants.board_size;
 const max_pieces_per_player = tackle.constants.max_pieces_per_player;
 
@@ -34,7 +35,7 @@ const isInCore = tackle.position.isInCore;
 /// Board squares in column-major order. Be careful! Use `index` to convert
 /// positions to indices that can be used here and update all other fields
 /// whenever you modify this array!
-squares: Squares = .{.empty} ** (board_size * board_size),
+squares: Squares = .{.empty} ** board_size,
 /// Indices of white pieces on the board for fast iteration
 white_pieces: [max_pieces_per_player]u8 = undefined,
 /// Indices of black pieces on the board for fast iteration
@@ -46,14 +47,14 @@ black_count: u8 = 0,
 /// Index of the gold piece on the board, or 0xff if not placed yet
 gold_piece: u8 = GOLD_EMPTY,
 
-const Squares = [board_size * board_size]SquareContent;
+const Squares = [board_size]SquareContent;
 
 // Max index is 10*10=100, so we can use a sentinel value to represent the empty state
 const GOLD_EMPTY = 0xff;
 
 fn positionFromIndex(idx: u8) Position {
-    const col = ColumnX.fromIndex(@intCast(idx / board_size));
-    const row = RowY.fromIndex(@intCast(idx % board_size));
+    const col = ColumnX.fromIndex(@intCast(idx / board_edge_length));
+    const row = RowY.fromIndex(@intCast(idx % board_edge_length));
     return .{ col, row };
 }
 
@@ -61,7 +62,7 @@ pub fn index(pos: Position) u8 {
     const col, const row = pos;
     const x: u8 = col.index();
     const y: u8 = row.index();
-    return x * board_size + y;
+    return x * board_edge_length + y;
 }
 
 /// Place a piece on the board. This is a low-level function that only checks
@@ -435,7 +436,7 @@ pub const MoveIterator = struct {
 
     fn setNextMaximumMoveProperties(self: *MoveIterator) !void {
         // This data will be thrown away before returning, so we can safely allocate it on the stack
-        var positions_buffer: [10]Position = undefined;
+        var positions_buffer: [board_edge_length]Position = undefined;
 
         // TODO: Logic that detects if diagonal moves from the corners are possible and handles them accordingly
         // Right now, only horizontal and vertical moves are handled
@@ -545,11 +546,11 @@ pub fn expectContent(board: Board, white_pieces: []const Position, black_pieces:
 
     // Ensure that the data invariants are upheld
     var white_count: u8 = 0;
-    var white_positions: [board_size * board_size]u8 = undefined;
+    var white_positions: [board_size]u8 = undefined;
     var black_count: u8 = 0;
-    var black_positions: [board_size * board_size]u8 = undefined;
+    var black_positions: [board_size]u8 = undefined;
     var gold_count: u8 = 0;
-    var gold_positions: [board_size * board_size]u8 = undefined;
+    var gold_positions: [board_size]u8 = undefined;
     for (board.squares, 0..) |content, idx| {
         switch (content) {
             .white => {

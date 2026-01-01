@@ -136,6 +136,7 @@ fn isSymmetric180(width: u3, height: u3, requirements: []const JobRequirement) b
     return true;
 }
 
+// 3-piece jobs
 pub fn turm3() Job {
     return init(1, 3, &.{
         .piece, .piece, .piece,
@@ -150,6 +151,7 @@ pub fn treppe3() Job {
     }) catch unreachable;
 }
 
+// 4-piece jobs
 pub fn turm4() Job {
     return init(1, 4, &.{
         .piece, .piece, .piece, .piece,
@@ -179,11 +181,50 @@ pub fn bluete() Job {
     }) catch unreachable;
 }
 
+// 5-piece jobs
+pub fn turm5() Job {
+    return init(1, 5, &.{
+        .piece, .piece, .piece, .piece, .piece,
+    }) catch unreachable;
+}
+
+pub fn treppe5() Job {
+    return init(5, 5, &.{
+        .any,   .any,   .any,   .any,   .piece,
+        .any,   .any,   .any,   .piece, .any,
+        .any,   .any,   .piece, .any,   .any,
+        .any,   .piece, .any,   .any,   .any,
+        .piece, .any,   .any,   .any,   .any,
+    }) catch unreachable;
+}
+
+pub fn fuenf() Job {
+    return init(3, 3, &.{
+        .piece, .other, .piece,
+        .other, .piece, .other,
+        .piece, .other, .piece,
+    }) catch unreachable;
+}
+
 pub fn fisch() Job {
     return init(3, 3, &.{
         .any,   .piece, .piece,
         .any,   .piece, .piece,
         .piece, .any,   .any,
+    }) catch unreachable;
+}
+
+// 6-piece jobs
+pub fn turm6() Job {
+    return init(1, 6, &.{
+        .piece, .piece, .piece, .piece, .piece, .piece,
+    }) catch unreachable;
+}
+
+pub fn block6() Job {
+    return init(3, 2, &.{
+        .piece, .piece, .piece,
+        .piece, .piece, .piece,
     }) catch unreachable;
 }
 
@@ -202,6 +243,31 @@ pub fn vogel() Job {
         .any,   .piece, .piece, .any,
         .any,   .piece, .piece, .any,
         .piece, .any,   .any,   .any,
+    }) catch unreachable;
+}
+
+// 8-piece jobs
+pub fn block8() Job {
+    return init(4, 2, &.{
+        .piece, .piece, .piece, .piece,
+        .piece, .piece, .piece, .piece,
+    }) catch unreachable;
+}
+
+pub fn brunnen() Job {
+    return init(3, 3, &.{
+        .piece, .piece, .piece,
+        .piece, .other, .piece,
+        .piece, .piece, .piece,
+    }) catch unreachable;
+}
+
+// 9-piece jobs
+pub fn block9() Job {
+    return init(3, 3, &.{
+        .piece, .piece, .piece,
+        .piece, .piece, .piece,
+        .piece, .piece, .piece,
     }) catch unreachable;
 }
 
@@ -275,6 +341,26 @@ test "Job.init detects correct rotation counts" {
     try expectEqual(.four, fisch().rotation_count);
     try expectEqual(.four, kreuz().rotation_count);
     try expectEqual(.two, vogel().rotation_count);
+}
+
+test "all official jobs initialize without error" {
+    _ = turm3();
+    _ = treppe3();
+    _ = turm4();
+    _ = treppe4();
+    _ = quadrat();
+    _ = bluete();
+    _ = turm5();
+    _ = treppe5();
+    _ = fuenf();
+    _ = fisch();
+    _ = turm6();
+    _ = block6();
+    _ = kreuz();
+    _ = vogel();
+    _ = block8();
+    _ = brunnen();
+    _ = block9();
 }
 
 test "isFulfilled detects turm3 in lower left corner" {

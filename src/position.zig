@@ -12,7 +12,7 @@ pub const Corner = enum {
     top_right, // J10
 
     /// Return the Position of this corner on the board.
-    pub fn to_position(self: @This()) Position {
+    pub fn toPosition(self: @This()) Position {
         return switch (self) {
             .bottom_left => .{ .A, ._1 },
             .bottom_right => .{ .J, ._1 },
@@ -24,7 +24,7 @@ pub const Corner = enum {
     /// Return a List of all Positions along the diagonal from this corner
     /// to the opposite corner, excluding this corner itself.
     /// Pretty naive way of implementing iteration, but it's fine for now.
-    pub fn to_list(self: @This()) [9]Position {
+    pub fn toList(self: @This()) [9]Position {
         return switch (self) {
             .bottom_left => .{
                 .{ .B, ._2 },
@@ -138,7 +138,7 @@ pub const RowY = enum(u4) {
     }
 };
 
-pub fn get_block_height(first: RowY, last: RowY) BlockSize {
+pub fn getBlockHeight(first: RowY, last: RowY) BlockSize {
     return @enumFromInt(@intFromEnum(last) - @intFromEnum(first));
 }
 
@@ -196,13 +196,13 @@ pub const ColumnX = enum(u4) {
     }
 };
 
-pub fn get_block_width(first: ColumnX, last: ColumnX) BlockSize {
+pub fn getBlockWidth(first: ColumnX, last: ColumnX) BlockSize {
     return @enumFromInt(@intFromEnum(last) - @intFromEnum(first));
 }
 
 /// Return true if the given square is on the border of the board.
 /// Pieces can only be placed on the border during the opening phase.
-pub fn is_on_border(position: Position) bool {
+pub fn isOnBorder(position: Position) bool {
     const col, const row = position;
     return col == .A or col == .J or row == ._1 or row == ._10;
 }
@@ -210,13 +210,13 @@ pub fn is_on_border(position: Position) bool {
 /// Return true if the given square is in the court, i.e. not on the border.
 /// All pieces of a job must be in the court for the job to be completed.
 /// Once all pieces of a player are in the court, the gold piece is removed.
-pub fn is_in_court(position: Position) bool {
-    return !is_on_border(position);
+pub fn isInCourt(position: Position) bool {
+    return !isOnBorder(position);
 }
 
 /// Return true if the given square is in the core, i.e. the centermost 16 squares.
 /// The gold piece can only be placed in the core.
-pub fn is_in_core(position: Position) bool {
+pub fn isInCore(position: Position) bool {
     const col, const row = position;
     const col_int = @intFromEnum(col);
     const col_in_core = (col_int >= @intFromEnum(ColumnX.D)) and (col_int <= @intFromEnum(ColumnX.G));
@@ -238,7 +238,7 @@ pub const BlockSize = enum(u2) {
     _4 = 3,
 
     /// Return the number of pieces this block size represents.
-    pub fn num_pieces(self: @This()) u4 {
+    pub fn numPieces(self: @This()) u4 {
         return @intFromEnum(self) + 1;
     }
 };
@@ -249,7 +249,7 @@ pub const Position = struct { ColumnX, RowY };
 /// Move the given position in the given direction by the given distance,
 /// if possible (i.e. if it stays within the board boundaries).
 /// Return null if the move would go out of bounds.
-pub fn move_position_if_possible(pos: Position, direction: Direction, distance: u4) ?Position {
+pub fn movePositionIfPossible(pos: Position, direction: Direction, distance: u4) ?Position {
     if (distance == 0) return pos;
     if (distance > 9) return null; // Maximum distance on 10x10 board is 9
     const col, const row = pos;
@@ -278,7 +278,7 @@ pub fn move_position_if_possible(pos: Position, direction: Direction, distance: 
 /// Move the given position in the given direction by the given distance.
 /// Assumes that the move is possible (i.e. stays within the board boundaries),
 /// performed checks depend on Zig's build mode.
-pub fn move_position(pos: Position, direction: Direction, distance: u4) Position {
+pub fn movePosition(pos: Position, direction: Direction, distance: u4) Position {
     const col, const row = pos;
     return switch (direction) {
         .up => .{ col, row.plus(distance) },
@@ -292,42 +292,42 @@ pub fn move_position(pos: Position, direction: Direction, distance: u4) Position
 /// 1-10 for both coordinates, 0 is not a valid value!
 pub const IntPosition = struct { u4, u4 };
 
-pub fn int_from_pos(pos: Position) IntPosition {
+pub fn intFromPos(pos: Position) IntPosition {
     return .{ @intFromEnum(pos.@"0"), @intFromEnum(pos.@"1") };
 }
-pub fn pos_from_int(int: IntPosition) Position {
+pub fn posFromInt(int: IntPosition) Position {
     return .{ @enumFromInt(int.@"0"), @enumFromInt(int.@"1") };
 }
 
-test move_position {
+test movePosition {
     const pos: Position = .{ .D, ._5 };
-    try std.testing.expectEqual(.{ .D, ._7 }, move_position(pos, .up, 2));
-    try std.testing.expectEqual(.{ .D, ._3 }, move_position(pos, .down, 2));
-    try std.testing.expectEqual(.{ .B, ._5 }, move_position(pos, .left, 2));
-    try std.testing.expectEqual(.{ .F, ._5 }, move_position(pos, .right, 2));
+    try std.testing.expectEqual(.{ .D, ._7 }, movePosition(pos, .up, 2));
+    try std.testing.expectEqual(.{ .D, ._3 }, movePosition(pos, .down, 2));
+    try std.testing.expectEqual(.{ .B, ._5 }, movePosition(pos, .left, 2));
+    try std.testing.expectEqual(.{ .F, ._5 }, movePosition(pos, .right, 2));
 }
 
-test move_position_if_possible {
+test movePositionIfPossible {
     const pos: Position = .{ .D, ._8 };
-    try std.testing.expectEqual(.{ .D, ._9 }, move_position_if_possible(pos, .up, 1));
-    try std.testing.expectEqual(.{ .D, ._10 }, move_position_if_possible(pos, .up, 2));
-    try std.testing.expectEqual(.{ .D, ._4 }, move_position_if_possible(pos, .down, 4));
-    try std.testing.expectEqual(.{ .D, ._1 }, move_position_if_possible(pos, .down, 7));
-    try std.testing.expectEqual(.{ .B, ._8 }, move_position_if_possible(pos, .left, 2));
-    try std.testing.expectEqual(.{ .A, ._8 }, move_position_if_possible(pos, .left, 3));
-    try std.testing.expectEqual(.{ .I, ._8 }, move_position_if_possible(pos, .right, 5));
-    try std.testing.expectEqual(.{ .J, ._8 }, move_position_if_possible(pos, .right, 6));
-    try std.testing.expect(move_position_if_possible(pos, .up, 3) == null);
-    try std.testing.expect(move_position_if_possible(pos, .down, 8) == null);
-    try std.testing.expect(move_position_if_possible(pos, .left, 4) == null);
-    try std.testing.expect(move_position_if_possible(pos, .right, 7) == null);
+    try std.testing.expectEqual(.{ .D, ._9 }, movePositionIfPossible(pos, .up, 1));
+    try std.testing.expectEqual(.{ .D, ._10 }, movePositionIfPossible(pos, .up, 2));
+    try std.testing.expectEqual(.{ .D, ._4 }, movePositionIfPossible(pos, .down, 4));
+    try std.testing.expectEqual(.{ .D, ._1 }, movePositionIfPossible(pos, .down, 7));
+    try std.testing.expectEqual(.{ .B, ._8 }, movePositionIfPossible(pos, .left, 2));
+    try std.testing.expectEqual(.{ .A, ._8 }, movePositionIfPossible(pos, .left, 3));
+    try std.testing.expectEqual(.{ .I, ._8 }, movePositionIfPossible(pos, .right, 5));
+    try std.testing.expectEqual(.{ .J, ._8 }, movePositionIfPossible(pos, .right, 6));
+    try std.testing.expect(movePositionIfPossible(pos, .up, 3) == null);
+    try std.testing.expect(movePositionIfPossible(pos, .down, 8) == null);
+    try std.testing.expect(movePositionIfPossible(pos, .left, 4) == null);
+    try std.testing.expect(movePositionIfPossible(pos, .right, 7) == null);
 
     const pos2: Position = .{ .A, ._1 };
-    try std.testing.expectEqual(.{ .A, ._1 }, move_position_if_possible(pos2, .up, 0));
-    try std.testing.expectEqual(.{ .A, ._10 }, move_position_if_possible(pos2, .up, 9));
-    try std.testing.expectEqual(.{ .J, ._1 }, move_position_if_possible(pos2, .right, 9));
+    try std.testing.expectEqual(.{ .A, ._1 }, movePositionIfPossible(pos2, .up, 0));
+    try std.testing.expectEqual(.{ .A, ._10 }, movePositionIfPossible(pos2, .up, 9));
+    try std.testing.expectEqual(.{ .J, ._1 }, movePositionIfPossible(pos2, .right, 9));
 
     const pos3: Position = .{ .J, ._10 };
-    try std.testing.expectEqual(.{ .J, ._1 }, move_position_if_possible(pos3, .down, 9));
-    try std.testing.expectEqual(.{ .A, ._10 }, move_position_if_possible(pos3, .left, 9));
+    try std.testing.expectEqual(.{ .J, ._1 }, movePositionIfPossible(pos3, .down, 9));
+    try std.testing.expectEqual(.{ .A, ._10 }, movePositionIfPossible(pos3, .left, 9));
 }

@@ -20,7 +20,7 @@ pub const PieceColor = enum(u2) {
     black = 2,
     gold = 3,
 
-    pub fn from_player(p: Player) @This() {
+    pub fn fromPlayer(p: Player) @This() {
         return @enumFromInt(@intFromEnum(p));
     }
 };
@@ -32,17 +32,17 @@ pub const SquareContent = enum(u2) {
     black = 2,
     gold = 3,
 
-    pub fn from_player(p: Player) @This() {
+    pub fn fromPlayer(p: Player) @This() {
         return @enumFromInt(@intFromEnum(p));
     }
 
-    pub fn from_color(c: PieceColor) @This() {
+    pub fn fromColor(c: PieceColor) @This() {
         return @enumFromInt(@intFromEnum(c));
     }
 };
 
 /// Validate that the piece being moved belongs to the player
-pub fn validate_color(player: Player, color: SquareContent) !void {
+pub fn validateColor(player: Player, color: SquareContent) !void {
     switch (player) {
         .white => if (color != .white) return error.WhiteCannotMoveBlackPiece,
         .black => if (color != .black) return error.BlackCannotMoveWhitePiece,

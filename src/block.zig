@@ -33,7 +33,7 @@ pub const Block = struct {
     /// ordered from the front of the block to the back. The front is defined as the
     /// side which the block is moving towards.
     /// This does not check whether the block is actually allowed to move in that direction!
-    pub fn to_list(self: Block, buffer: []Position, direction: Direction) []Position {
+    pub fn toList(self: Block, buffer: []Position, direction: Direction) []Position {
         var index: usize = 0;
 
         for (0..self.width) |dx| {
@@ -87,10 +87,10 @@ test "block init" {
     try expectEqual(2, block3.height);
 }
 
-test "block to_list" {
+test "block toList" {
     const block = Block.init(.{ .B, ._2 }, .{ .D, ._4 });
     var buffer: [9]Position = undefined;
-    const positions = block.to_list(&buffer, .up);
+    const positions = block.toList(&buffer, .up);
     const expected: [9]Position = .{
         .{ .B, ._4 },
         .{ .B, ._3 },
@@ -104,7 +104,7 @@ test "block to_list" {
     };
     try expectEqualSlices(Position, &expected, positions);
 
-    const positions2 = block.to_list(&buffer, .right);
+    const positions2 = block.toList(&buffer, .right);
     const expected2: [9]Position = .{
         .{ .D, ._2 },
         .{ .D, ._3 },
@@ -118,7 +118,7 @@ test "block to_list" {
     };
     try expectEqualSlices(Position, &expected2, positions2);
 
-    const positions3 = block.to_list(&buffer, .down);
+    const positions3 = block.toList(&buffer, .down);
     const expected3: [9]Position = .{
         .{ .B, ._2 },
         .{ .B, ._3 },
@@ -132,7 +132,7 @@ test "block to_list" {
     };
     try expectEqualSlices(Position, &expected3, positions3);
 
-    const positions4 = block.to_list(&buffer, .left);
+    const positions4 = block.toList(&buffer, .left);
     const expected4: [9]Position = .{
         .{ .B, ._2 },
         .{ .B, ._3 },

@@ -13,12 +13,12 @@ pub fn main() !void {
         var writer = stdout.writer(&output_buffer);
 
         const interface: tackle.UserInterface = .{
-            .get_next_placement = get_next_placement,
-            .get_next_move = get_next_move,
+            .getNextPlacement = getNextPlacement,
+            .getNextMove = getNextMove,
             .render = render,
         };
 
-        pub fn get_next_placement() !tackle.Position {
+        pub fn getNextPlacement() !tackle.Position {
             while (true) {
                 std.debug.print("Enter your piece placement:\n", .{});
                 var slice: ?[]const u8 = null;
@@ -27,7 +27,7 @@ pub fn main() !void {
                 }
                 var pos_reader = std.io.Reader.fixed(slice orelse unreachable);
 
-                const position = tackle.parse_position(&pos_reader) catch |err| {
+                const position = tackle.parsePosition(&pos_reader) catch |err| {
                     std.debug.print("Error parsing position: {}\n", .{err});
                     std.debug.print("Please enter a valid placement:\n", .{});
                     continue;
@@ -36,7 +36,7 @@ pub fn main() !void {
             }
         }
 
-        pub fn get_next_move(state: tackle.GameState) !tackle.Move {
+        pub fn getNextMove(state: tackle.GameState) !tackle.Move {
             while (true) {
                 std.debug.print("Enter your move:\n", .{});
                 var slice: ?[]const u8 = null;
@@ -45,8 +45,8 @@ pub fn main() !void {
                 }
                 var move_reader = std.io.Reader.fixed(slice orelse unreachable);
 
-                const player = state.current_player();
-                const turn = tackle.parse_turn(&move_reader, player) catch |err| {
+                const player = state.currentPlayer();
+                const turn = tackle.parseTurn(&move_reader, player) catch |err| {
                     std.debug.print("Error parsing move: {}\n", .{err});
                     std.debug.print("Please enter a valid move:\n", .{});
                     continue;
@@ -57,8 +57,8 @@ pub fn main() !void {
 
         pub fn render(state: tackle.GameState) !void {
             std.debug.print("\n\n", .{});
-            try text_renderer.render_board(&writer.interface, state.board);
-            const player = state.current_player();
+            try text_renderer.renderBoard(&writer.interface, state.board);
+            const player = state.currentPlayer();
             switch (state.phase) {
                 .opening => std.debug.print("Turn {}, {t}'s turn to place a piece.\n", .{ state.turn, player }),
                 .place_gold => std.debug.print("Place the gold piece for black.\n", .{}),
@@ -71,11 +71,11 @@ pub fn main() !void {
     const job = tackle.Job.turm3();
     var state = tackle.GameState.init(job);
 
-    try tackle.place_demo_pieces(&state);
+    try tackle.placeDemoPieces(&state);
 
     try ui.render(state);
 
-    _ = try tackle.run_game_loop(state, ui.interface);
+    _ = try tackle.runGameLoop(state, ui.interface);
 }
 
 test {

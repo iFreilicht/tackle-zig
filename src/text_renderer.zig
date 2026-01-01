@@ -37,7 +37,7 @@ const col_width = 4;
 const last_i = board_size * row_height + 1;
 const last_j = board_size * col_width + 1;
 
-fn render_position(i: usize, last: comptime_int, grid_size: comptime_int) RenderPosition {
+fn renderPosition(i: usize, last: comptime_int, grid_size: comptime_int) RenderPosition {
     if (i == 0) {
         return .start;
     } else if (i == last - 1) {
@@ -55,15 +55,12 @@ fn position(i: usize, j: usize) Position {
     const row: RowY = @enumFromInt(10 - (i / row_height));
     return .{ col, row };
 }
-fn iszero(i: usize) bool {
-    return i == 0;
-}
 
-pub fn render_board(writer: *std.io.Writer, board: Board) !void {
+pub fn renderBoard(writer: *std.io.Writer, board: Board) !void {
     var row_number: u8 = board_size;
 
     for (0..last_i) |i| {
-        const i_pos = render_position(i, last_i, row_height);
+        const i_pos = renderPosition(i, last_i, row_height);
 
         // Write left margin
         switch (i_pos) {
@@ -75,7 +72,7 @@ pub fn render_board(writer: *std.io.Writer, board: Board) !void {
         }
 
         for (0..last_j) |j| {
-            const j_pos = render_position(j, last_j, col_width);
+            const j_pos = renderPosition(j, last_j, col_width);
 
             const glyph = switch (i_pos) {
                 .start => switch (j_pos) {
@@ -98,7 +95,7 @@ pub fn render_board(writer: *std.io.Writer, board: Board) !void {
                 },
                 .on_symbol => switch (j_pos) {
                     .start, .end, .on_line => line_vert,
-                    .on_symbol => switch (board.get_square(position(i, j))) {
+                    .on_symbol => switch (board.getSquare(position(i, j))) {
                         .empty => " ",
                         .white => "□",
                         .black => "■",
@@ -129,11 +126,11 @@ pub fn render_board(writer: *std.io.Writer, board: Board) !void {
     try writer.flush();
 }
 
-pub fn debug_print_board(board: Board) !void {
+pub fn debugPrintBoard(board: Board) !void {
     const stdout = std.fs.File.stdout();
     var output_buffer: [50]u8 = undefined;
     var writer = stdout.writer(&output_buffer);
-    try render_board(&writer.interface, board);
+    try renderBoard(&writer.interface, board);
 }
 
 test "empty board is drawn correctly" {
@@ -165,7 +162,7 @@ test "empty board is drawn correctly" {
 
     var buffer: [2134:0]u8 = undefined;
     var writer = std.io.Writer.fixed(&buffer);
-    try render_board(&writer, .{});
+    try renderBoard(&writer, .{});
 
     try std.testing.expectEqualSlices(u8, &buffer, expected);
 }
@@ -198,17 +195,17 @@ test "board with a few pieces is drawn correctly" {
     ;
 
     var board: Board = .{};
-    try board.place_piece(.white, .{ .A, ._10 });
-    try board.place_piece(.black, .{ .C, ._9 });
-    try board.place_piece(.white, .{ .G, ._9 });
-    try board.place_piece(.white, .{ .C, ._8 });
-    try board.place_piece(.black, .{ .G, ._8 });
-    try board.place_piece(.gold, .{ .D, ._7 });
-    try board.place_piece(.white, .{ .J, ._3 });
-    try board.place_piece(.white, .{ .E, ._1 });
-    try board.place_piece(.black, .{ .J, ._1 });
+    try board.placePiece(.white, .{ .A, ._10 });
+    try board.placePiece(.black, .{ .C, ._9 });
+    try board.placePiece(.white, .{ .G, ._9 });
+    try board.placePiece(.white, .{ .C, ._8 });
+    try board.placePiece(.black, .{ .G, ._8 });
+    try board.placePiece(.gold, .{ .D, ._7 });
+    try board.placePiece(.white, .{ .J, ._3 });
+    try board.placePiece(.white, .{ .E, ._1 });
+    try board.placePiece(.black, .{ .J, ._1 });
     var buffer: [2150:0]u8 = undefined;
     var writer = std.io.Writer.fixed(&buffer);
-    try render_board(&writer, board);
+    try renderBoard(&writer, board);
     try std.testing.expectEqualStrings(&buffer, expected);
 }

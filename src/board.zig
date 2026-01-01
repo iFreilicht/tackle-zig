@@ -6,6 +6,7 @@ const enums = @import("enums.zig");
 const move_module = @import("move.zig");
 const position = @import("position.zig");
 
+const Allocator = std.mem.Allocator;
 const expectError = std.testing.expectError;
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
@@ -23,12 +24,18 @@ const SquareContent = enums.SquareContent;
 const Corner = position.Corner;
 const Position = position.Position;
 
-const validate_color = enums.validate_color;
-const validate_color_when_placing = enums.validate_color_when_placing;
-const move_position = position.move_position;
-const move_position_if_possible = position.move_position_if_possible;
-const is_on_border = position.is_on_border;
-const is_in_core = position.is_in_core;
+const validateColor = enums.validateColor;
+const movePosition = position.movePosition;
+const movePositionIfPossible = position.movePositionIfPossible;
+const isOnBorder = position.isOnBorder;
+const isInCore = position.isInCore;
+
+pub const MoveIterator = struct {
+    board: Board,
+    allocator: Allocator,
+    player: Player,
+    piece_indices: []const u8,
+};
 
 /// Representation of the game board and the pieces on it.
 pub const Board = struct {
@@ -61,12 +68,12 @@ pub const Board = struct {
 
     /// Place a piece on the board. This is a low-level function that only checks
     /// for data invariants, not game rules.
-    /// For a game-rule-compliant placement, use `execute_placement` instead.
-    pub fn place_piece(self: *Board, color: PieceColor, at: Position) !void {
+    /// For a game-rule-compliant placement, use `executePlacement` instead.
+    pub fn placePiece(self: *Board, color: PieceColor, at: Position) !void {
         const idx = index(at);
         if (self.squares[idx] != .empty) return error.SquareOccupied;
 
-        self.squares[idx] = SquareContent.from_color(color);
+        self.squares[idx] = SquareContent.fromColor(color);
         switch (color) {
             .white => {
                 self.white_pieces[self.white_count] = idx;
@@ -86,10 +93,10 @@ pub const Board = struct {
     /// Remove a piece from the board. Only happens during a worm move, undo, or
     /// when the gold piece is removed. This is a low-level function that only checks
     /// for data invariants, not game rules.
-    /// Do not use `remove_piece` and `place_piece` to move pieces around!
-    /// Use `move_single_piece` for board logic instead, or use
-    /// `execute_move` for game-rule-compliant moves.
-    pub fn remove_piece(self: *Board, from: Position) !void {
+    /// Do not use `removePiece` and `placePiece` to move pieces around!
+    /// Use `moveSinglePiece` for board logic instead, or use
+    /// `executeMove` for game-rule-compliant moves.
+    pub fn removePiece(self: *Board, from: Position) !void {
         const idx = index(from);
 
         switch (self.squares[idx]) {
@@ -129,7 +136,7 @@ pub const Board = struct {
     /// For now, we trust that the Zig compiler will optimize away the copying as much as possible
     /// until we have proper profiling data to prove otherwise.
     /// This is a low-level function that only checks for data invariants, not game rules.
-    fn move_piece(squares: Squares, idx_from: u8, idx_to: u8) !Squares {
+    fn movePiece(squares: Squares, idx_from: u8, idx_to: u8) !Squares {
         var new_squares = squares;
         switch (new_squares[idx_from]) {
             .empty => return error.SquareEmpty,
@@ -147,7 +154,7 @@ pub const Board = struct {
     /// Update the position of a piece in the relevant array after it has been moved.
     /// Will crash if `self.squares[new_idx]` is `.empty` or `.gold`; if those were moved, our data invariants
     /// are already broken and can't be reconciled.
-    fn update_piece_position(self: *Board, old_idx: u8, new_idx: u8) void {
+    fn updatePiecePosition(self: *Board, old_idx: u8, new_idx: u8) void {
         const content = self.squares[new_idx];
         switch (content) {
             .white => {
@@ -170,22 +177,22 @@ pub const Board = struct {
 
     /// Move a single piece from one position to another. This is a low-level
     /// function that only checks for data invariants, not game rules.
-    fn move_single_piece(self: *Board, from: Position, to: Position) !void {
+    fn moveSinglePiece(self: *Board, from: Position, to: Position) !void {
         const idx_from = index(from);
         const idx_to = index(to);
 
         // Update squares array
-        self.squares = try Board.move_piece(self.squares, idx_from, idx_to);
+        self.squares = try Board.movePiece(self.squares, idx_from, idx_to);
 
         // Update piece position in the relevant lookup array
-        self.update_piece_position(idx_from, idx_to);
+        self.updatePiecePosition(idx_from, idx_to);
     }
 
     /// Try to move all pieces at the given start positions in the specified direction and distance.
     /// This only checks for data invariants, not game rules.
     /// The positions must be provided from rear to front, so the pieces pushing come before the pieces
     /// being pushed. The order perpendicular to the movement direction does not matter.
-    fn move_many_pieces(self: *Board, start_positions: []const Position, direction: Direction, distance: u4) !void {
+    fn moveManyPieces(self: *Board, start_positions: []const Position, direction: Direction, distance: u4) !void {
         var working_squares = self.squares;
         // Iterate from front to rear to avoid collisions when moving pieces
         // We expect the caller to provide the positions in order from rear to front
@@ -193,16 +200,16 @@ pub const Board = struct {
         for (0..start_positions.len) |i_reverse| {
             const i = start_positions.len - 1 - i_reverse;
             const pos = start_positions[i];
-            const target_pos = move_position(pos, direction, distance);
-            working_squares = try Board.move_piece(working_squares, index(pos), index(target_pos));
+            const target_pos = movePosition(pos, direction, distance);
+            working_squares = try Board.movePiece(working_squares, index(pos), index(target_pos));
         }
 
         // Commit the changes to self.squares and update piece positions in lookup arrays
         self.squares = working_squares;
         for (0..start_positions.len) |i| {
             const pos = start_positions[i];
-            const target_pos = move_position(pos, direction, distance);
-            self.update_piece_position(index(pos), index(target_pos));
+            const target_pos = movePosition(pos, direction, distance);
+            self.updatePiecePosition(index(pos), index(target_pos));
         }
     }
 
@@ -220,9 +227,9 @@ pub const Board = struct {
 
     /// Get the `MoveList` representing the longest legal move from the start position in the specified direction,
     /// considering all game rules about blocks, piece colors, and pushing opponent pieces.
-    /// It is guaranteed that the returned `MoveList` contains valid input for `move_many_pieces` and that
+    /// It is guaranteed that the returned `MoveList` contains valid input for `moveManyPieces` and that
     /// performing that move will not violate any game rules.
-    fn get_max_move_list(self: Board, start: Position, direction: Direction, position_buffer: []Position) MoveList {
+    fn getMaxMoveList(self: Board, start: Position, direction: Direction, position_buffer: []Position) MoveList {
         var distance: u4 = 0;
         var current_pos = start;
         const EMPTY = MoveList{ .distance = 0, .block_length = 0, .positions = position_buffer[0..0] };
@@ -244,14 +251,14 @@ pub const Board = struct {
         position_buffer[0] = start;
 
         while (true) {
-            current_pos = move_position_if_possible(current_pos, direction, 1) orelse break;
+            current_pos = movePositionIfPossible(current_pos, direction, 1) orelse break;
             const idx = index(current_pos);
             if (idx >= self.squares.len) break;
             const content = self.squares[idx];
 
             check_content: switch (phase) {
                 .own => {
-                    if (SquareContent.from_color(start_color) == content) {
+                    if (SquareContent.fromColor(start_color) == content) {
                         block_strength += 1;
                         position_buffer[pos_index] = current_pos;
                         pos_index += 1;
@@ -261,7 +268,7 @@ pub const Board = struct {
                     }
                 },
                 .opponent => {
-                    if (SquareContent.from_color(opponent_color) == content) {
+                    if (SquareContent.fromColor(opponent_color) == content) {
                         opponent_block_strength += 1;
                         if (opponent_block_strength >= block_strength) return EMPTY;
                         position_buffer[pos_index] = current_pos;
@@ -288,90 +295,90 @@ pub const Board = struct {
         };
     }
 
-    pub fn get_square(self: Board, at: Position) SquareContent {
+    pub fn getSquare(self: Board, at: Position) SquareContent {
         const idx = index(at);
         return self.squares[idx];
     }
 
-    pub fn is_square_empty(self: Board, at: Position) bool {
-        return self.get_square(at) == .empty;
+    pub fn isSquareEmpty(self: Board, at: Position) bool {
+        return self.getSquare(at) == .empty;
     }
 
     /// Place a piece at the specified position, checking for violations of game rules.
-    pub fn execute_placement(board: *Board, color: PieceColor, at: Position) !void {
+    pub fn executePlacement(self: *Board, color: PieceColor, at: Position) !void {
         switch (color) {
             .white, .black => {
-                if (!is_on_border(at)) return error.PieceNotOnBorder;
-                const c = SquareContent.from_color(color);
+                if (!isOnBorder(at)) return error.PieceNotOnBorder;
+                const c = SquareContent.fromColor(color);
 
                 // Check neighboring squares for same-color pieces
                 if (at.@"0" == .A or at.@"0" == .J) {
-                    const up_pos = move_position_if_possible(at, .up, 1);
-                    const down_pos = move_position_if_possible(at, .down, 1);
+                    const up_pos = movePositionIfPossible(at, .up, 1);
+                    const down_pos = movePositionIfPossible(at, .down, 1);
                     if (up_pos) |p| {
-                        if (board.get_square(p) == c) return error.PieceBlockedByUpperNeighbor;
+                        if (self.getSquare(p) == c) return error.PieceBlockedByUpperNeighbor;
                     }
                     if (down_pos) |p| {
-                        if (board.get_square(p) == c) return error.PieceBlockedByLowerNeighbor;
+                        if (self.getSquare(p) == c) return error.PieceBlockedByLowerNeighbor;
                     }
                 }
                 if (at.@"1" == ._1 or at.@"1" == ._10) {
-                    const left_pos = move_position_if_possible(at, .left, 1);
-                    const right_pos = move_position_if_possible(at, .right, 1);
+                    const left_pos = movePositionIfPossible(at, .left, 1);
+                    const right_pos = movePositionIfPossible(at, .right, 1);
                     if (left_pos) |p| {
-                        if (board.get_square(p) == c) return error.PieceBlockedByLeftNeighbor;
+                        if (self.getSquare(p) == c) return error.PieceBlockedByLeftNeighbor;
                     }
                     if (right_pos) |p| {
-                        if (board.get_square(p) == c) return error.PieceBlockedByRightNeighbor;
+                        if (self.getSquare(p) == c) return error.PieceBlockedByRightNeighbor;
                     }
                 }
             },
             .gold => {
-                if (!is_in_core(at)) return error.GoldPieceNotInCore;
-                if (board.gold_piece != Board.GOLD_EMPTY) return error.GoldPieceAlreadyPlaced;
+                if (!isInCore(at)) return error.GoldPieceNotInCore;
+                if (self.gold_piece != Board.GOLD_EMPTY) return error.GoldPieceAlreadyPlaced;
             },
         }
 
-        try board.place_piece(color, at);
+        try self.placePiece(color, at);
     }
 
     /// Move a piece according to the specified move, checking for
     /// violations of game rules.
-    pub fn execute_move(board: *Board, player: Player, move: Move) !void {
+    pub fn executeMove(self: *Board, player: Player, move: Move) !void {
         switch (move) {
             .diagonal => |d| {
                 const start = d.start();
-                const content = board.get_square(start);
-                try validate_color(player, content);
+                const content = self.getSquare(start);
+                try validateColor(player, content);
 
-                const positions = d.from.to_list();
+                const positions = d.from.toList();
                 for (0..d.distance) |i| {
                     const pos = positions[i];
-                    if (!board.is_square_empty(pos)) return error.PathBlocked;
+                    if (!self.isSquareEmpty(pos)) return error.PathBlocked;
                 }
 
                 const end = d.end();
-                try board.move_single_piece(start, end);
+                try self.moveSinglePiece(start, end);
             },
             inline .horizontal, .vertical => |m| {
                 const start = m.start();
-                const content = board.get_square(start);
-                try validate_color(player, content);
+                const content = self.getSquare(start);
+                try validateColor(player, content);
 
                 const direction = m.direction();
                 const distance = m.distance();
 
-                const block_rear_edge = Block.init(m.start(), m.start_block_end());
+                const block_rear_edge = Block.init(m.start(), m.startBlockEnd());
                 var rear_position_buffer: [4]Position = undefined;
-                const positions = block_rear_edge.to_list(&rear_position_buffer, direction);
+                const rear_edge_positions = block_rear_edge.toList(&rear_position_buffer, direction);
 
                 // The absolute maximum number of positions we might need to move is 16+12=28,
                 // because the biggest block is 4x4=16 and the biggest block it can push is 3x4=12.
                 var start_positions_buffer: [4 * 4 + 3 * 4]Position = undefined;
                 var pos_index: usize = 0;
                 var block_length: u4 = 0;
-                for (positions) |pos| {
-                    const move_list = board.get_max_move_list(
+                for (rear_edge_positions) |pos| {
+                    const move_list = self.getMaxMoveList(
                         pos,
                         direction,
                         start_positions_buffer[pos_index..],
@@ -386,13 +393,13 @@ pub const Board = struct {
                     }
                 }
 
-                if (block_length < m.block_breadth()) {
+                if (block_length < m.blockBreadth()) {
                     return error.BlockCannotMoveSideways;
                 }
 
                 // TODO: Implement worm moves
 
-                try board.move_many_pieces(start_positions_buffer[0..pos_index], direction, distance);
+                try self.moveManyPieces(start_positions_buffer[0..pos_index], direction, distance);
             },
         }
     }
@@ -408,15 +415,15 @@ pub fn expectBoardContent(board: Board, white_pieces: []const Position, black_pi
 
     // Check whether all pieces are in the expected positions
     for (white_pieces) |pos| {
-        if (board.get_square(pos) != .white) return error.SquareDoesNotContainWhitePiece;
+        if (board.getSquare(pos) != .white) return error.SquareDoesNotContainWhitePiece;
     }
 
     for (black_pieces) |pos| {
-        if (board.get_square(pos) != .black) return error.SquareDoesNotContainBlackPiece;
+        if (board.getSquare(pos) != .black) return error.SquareDoesNotContainBlackPiece;
     }
 
     if (gold_piece) |gp| {
-        if (board.get_square(gp) != .gold) return error.SquareDoesNotContainGoldPiece;
+        if (board.getSquare(gp) != .gold) return error.SquareDoesNotContainGoldPiece;
     }
 
     // Ensure that the data invariants are upheld
@@ -483,11 +490,11 @@ pub fn expectBoardContent(board: Board, white_pieces: []const Position, black_pi
 test expectBoardContent {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .A, ._1 });
-    try board.place_piece(.white, .{ .J, ._2 });
-    try board.place_piece(.black, .{ .A, ._4 });
-    try board.place_piece(.black, .{ .F, ._3 });
-    try board.place_piece(.gold, .{ .E, ._5 });
+    try board.placePiece(.white, .{ .A, ._1 });
+    try board.placePiece(.white, .{ .J, ._2 });
+    try board.placePiece(.black, .{ .A, ._4 });
+    try board.placePiece(.black, .{ .F, ._3 });
+    try board.placePiece(.gold, .{ .E, ._5 });
 
     const white_positions: [2]Position = .{ .{ .A, ._1 }, .{ .J, ._2 } };
     const black_positions: [2]Position = .{ .{ .A, ._4 }, .{ .F, ._3 } };
@@ -501,7 +508,7 @@ test expectBoardContent {
 
     // Remove white piece without breaking invariants
     var broken_board1 = board;
-    try broken_board1.remove_piece(.{ .A, ._1 });
+    try broken_board1.removePiece(.{ .A, ._1 });
     try expectError(
         error.WhiteCountDiffers,
         expectBoardContent(broken_board1, &white_positions, &black_positions, gold_position),
@@ -509,7 +516,7 @@ test expectBoardContent {
 
     // Remove black piece without breaking invariants
     var broken_board2 = board;
-    try broken_board2.remove_piece(.{ .F, ._3 });
+    try broken_board2.removePiece(.{ .F, ._3 });
     try expectError(
         error.BlackCountDiffers,
         expectBoardContent(broken_board2, &white_positions, &black_positions, gold_position),
@@ -517,7 +524,7 @@ test expectBoardContent {
 
     // Move white piece without breaking invariants
     var broken_board3 = board;
-    try broken_board3.move_single_piece(.{ .A, ._1 }, .{ .B, ._1 });
+    try broken_board3.moveSinglePiece(.{ .A, ._1 }, .{ .B, ._1 });
     try expectError(
         error.SquareDoesNotContainWhitePiece,
         expectBoardContent(broken_board3, &white_positions, &black_positions, gold_position),
@@ -525,7 +532,7 @@ test expectBoardContent {
 
     // Move black piece without breaking invariants
     var broken_board4 = board;
-    try broken_board4.move_single_piece(.{ .F, ._3 }, .{ .F, ._4 });
+    try broken_board4.moveSinglePiece(.{ .F, ._3 }, .{ .F, ._4 });
     try expectError(
         error.SquareDoesNotContainBlackPiece,
         expectBoardContent(broken_board4, &white_positions, &black_positions, gold_position),
@@ -601,10 +608,10 @@ test expectBoardContent {
 test "move many pieces horizontal right" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .B, ._5 });
-    try board.place_piece(.white, .{ .C, ._5 });
-    try board.place_piece(.black, .{ .E, ._5 });
-    try board.place_piece(.black, .{ .F, ._5 });
+    try board.placePiece(.white, .{ .B, ._5 });
+    try board.placePiece(.white, .{ .C, ._5 });
+    try board.placePiece(.black, .{ .E, ._5 });
+    try board.placePiece(.black, .{ .F, ._5 });
 
     const start_positions = [_]Position{
         .{ .B, ._5 },
@@ -613,7 +620,7 @@ test "move many pieces horizontal right" {
         .{ .F, ._5 },
     };
 
-    try board.move_many_pieces(start_positions[0..4], .right, 2);
+    try board.moveManyPieces(start_positions[0..4], .right, 2);
 
     try expectBoardContent(
         board,
@@ -626,10 +633,10 @@ test "move many pieces horizontal right" {
 test "move many pieces horizontal left" {
     var board: Board = .{};
 
-    try board.place_piece(.black, .{ .J, ._3 });
-    try board.place_piece(.black, .{ .I, ._3 });
-    try board.place_piece(.white, .{ .H, ._3 });
-    try board.place_piece(.white, .{ .G, ._3 });
+    try board.placePiece(.black, .{ .J, ._3 });
+    try board.placePiece(.black, .{ .I, ._3 });
+    try board.placePiece(.white, .{ .H, ._3 });
+    try board.placePiece(.white, .{ .G, ._3 });
 
     const start_positions = [_]Position{
         .{ .J, ._3 },
@@ -638,7 +645,7 @@ test "move many pieces horizontal left" {
         .{ .G, ._3 },
     };
 
-    try board.move_many_pieces(start_positions[0..4], .left, 4);
+    try board.moveManyPieces(start_positions[0..4], .left, 4);
 
     try expectBoardContent(
         board,
@@ -651,10 +658,10 @@ test "move many pieces horizontal left" {
 test "move many pieces vertical up" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .D, ._1 });
-    try board.place_piece(.white, .{ .D, ._2 });
-    try board.place_piece(.black, .{ .D, ._3 });
-    try board.place_piece(.black, .{ .D, ._4 });
+    try board.placePiece(.white, .{ .D, ._1 });
+    try board.placePiece(.white, .{ .D, ._2 });
+    try board.placePiece(.black, .{ .D, ._3 });
+    try board.placePiece(.black, .{ .D, ._4 });
 
     const start_positions = [_]Position{
         .{ .D, ._1 },
@@ -663,7 +670,7 @@ test "move many pieces vertical up" {
         .{ .D, ._4 },
     };
 
-    try board.move_many_pieces(start_positions[0..4], .up, 6);
+    try board.moveManyPieces(start_positions[0..4], .up, 6);
 
     try expectBoardContent(
         board,
@@ -676,11 +683,11 @@ test "move many pieces vertical up" {
 test "move many pieces vertical down" {
     var board: Board = .{};
 
-    try board.place_piece(.black, .{ .F, ._10 });
-    try board.place_piece(.black, .{ .F, ._9 });
-    try board.place_piece(.black, .{ .F, ._8 });
-    try board.place_piece(.white, .{ .F, ._7 });
-    try board.place_piece(.white, .{ .F, ._6 });
+    try board.placePiece(.black, .{ .F, ._10 });
+    try board.placePiece(.black, .{ .F, ._9 });
+    try board.placePiece(.black, .{ .F, ._8 });
+    try board.placePiece(.white, .{ .F, ._7 });
+    try board.placePiece(.white, .{ .F, ._6 });
 
     const start_positions = [_]Position{
         .{ .F, ._10 },
@@ -690,7 +697,7 @@ test "move many pieces vertical down" {
         .{ .F, ._6 },
     };
 
-    try board.move_many_pieces(start_positions[0..5], .down, 5);
+    try board.moveManyPieces(start_positions[0..5], .down, 5);
 
     try expectBoardContent(
         board,
@@ -703,10 +710,10 @@ test "move many pieces vertical down" {
 test "get max move list single piece up" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .C, ._5 });
+    try board.placePiece(.white, .{ .C, ._5 });
 
     var position_buffer: [1]Position = undefined;
-    const move_list = board.get_max_move_list(.{ .C, ._5 }, .up, &position_buffer);
+    const move_list = board.getMaxMoveList(.{ .C, ._5 }, .up, &position_buffer);
     try expectEqualDeep(Board.MoveList{
         .distance = 5,
         .block_length = 1,
@@ -717,14 +724,14 @@ test "get max move list single piece up" {
 test "get max move list pushing opponent down" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .E, ._5 });
-    try board.place_piece(.white, .{ .E, ._6 });
-    try board.place_piece(.black, .{ .E, ._7 });
-    try board.place_piece(.black, .{ .E, ._8 });
-    try board.place_piece(.black, .{ .E, ._9 });
+    try board.placePiece(.white, .{ .E, ._5 });
+    try board.placePiece(.white, .{ .E, ._6 });
+    try board.placePiece(.black, .{ .E, ._7 });
+    try board.placePiece(.black, .{ .E, ._8 });
+    try board.placePiece(.black, .{ .E, ._9 });
 
     var position_buffer: [5]Position = undefined;
-    const move_list = board.get_max_move_list(.{ .E, ._9 }, .down, &position_buffer);
+    const move_list = board.getMaxMoveList(.{ .E, ._9 }, .down, &position_buffer);
     try expectEqualDeep(Board.MoveList{
         .distance = 4,
         .block_length = 3,
@@ -741,13 +748,13 @@ test "get max move list pushing opponent down" {
 test "get max move list pushing opponent right blocked by own piece" {
     var board: Board = .{};
 
-    try board.place_piece(.black, .{ .A, ._4 });
-    try board.place_piece(.black, .{ .B, ._4 });
-    try board.place_piece(.white, .{ .C, ._4 });
-    try board.place_piece(.black, .{ .G, ._4 });
+    try board.placePiece(.black, .{ .A, ._4 });
+    try board.placePiece(.black, .{ .B, ._4 });
+    try board.placePiece(.white, .{ .C, ._4 });
+    try board.placePiece(.black, .{ .G, ._4 });
 
     var position_buffer: [3]Position = undefined;
-    const move_list = board.get_max_move_list(.{ .A, ._4 }, .right, &position_buffer);
+    const move_list = board.getMaxMoveList(.{ .A, ._4 }, .right, &position_buffer);
     try expectEqualDeep(Board.MoveList{
         .distance = 3,
         .block_length = 2,
@@ -762,14 +769,14 @@ test "get max move list pushing opponent right blocked by own piece" {
 test "get max move list pushing opponent left blocked by opponent piece" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .I, ._2 });
-    try board.place_piece(.white, .{ .H, ._2 });
-    try board.place_piece(.white, .{ .G, ._2 });
-    try board.place_piece(.black, .{ .F, ._2 });
-    try board.place_piece(.black, .{ .D, ._2 });
+    try board.placePiece(.white, .{ .I, ._2 });
+    try board.placePiece(.white, .{ .H, ._2 });
+    try board.placePiece(.white, .{ .G, ._2 });
+    try board.placePiece(.black, .{ .F, ._2 });
+    try board.placePiece(.black, .{ .D, ._2 });
 
     var position_buffer: [4]Position = undefined;
-    const move_list = board.get_max_move_list(.{ .I, ._2 }, .left, &position_buffer);
+    const move_list = board.getMaxMoveList(.{ .I, ._2 }, .left, &position_buffer);
     try expectEqualDeep(Board.MoveList{
         .distance = 1,
         .block_length = 3,
@@ -785,10 +792,10 @@ test "get max move list pushing opponent left blocked by opponent piece" {
 test "get max move list for gold piece and empty square" {
     var board: Board = .{};
 
-    try board.place_piece(.gold, .{ .E, ._5 });
+    try board.placePiece(.gold, .{ .E, ._5 });
 
     var position_buffer: [1]Position = undefined;
-    const move_list_gold = board.get_max_move_list(.{ .E, ._5 }, .up, &position_buffer);
+    const move_list_gold = board.getMaxMoveList(.{ .E, ._5 }, .up, &position_buffer);
     const expected_move_list = Board.MoveList{
         .distance = 0,
         .block_length = 0,
@@ -796,36 +803,36 @@ test "get max move list for gold piece and empty square" {
     };
     try expectEqualDeep(expected_move_list, move_list_gold);
 
-    const move_list_empty = board.get_max_move_list(.{ .A, ._1 }, .right, &position_buffer);
+    const move_list_empty = board.getMaxMoveList(.{ .A, ._1 }, .right, &position_buffer);
     try expectEqualDeep(expected_move_list, move_list_empty);
 }
 
 test "place pieces" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .B, ._5 });
-    try board.place_piece(.white, .{ .C, ._4 });
-    try board.place_piece(.black, .{ .H, ._6 });
-    try board.place_piece(.gold, .{ .E, ._5 });
+    try board.placePiece(.white, .{ .B, ._5 });
+    try board.placePiece(.white, .{ .C, ._4 });
+    try board.placePiece(.black, .{ .H, ._6 });
+    try board.placePiece(.gold, .{ .E, ._5 });
 
     try expectEqualSlices(u8, &[_]u8{ 14, 23 }, board.white_pieces[0..2]);
     try expectEqualSlices(u8, &[_]u8{75}, board.black_pieces[0..1]);
     try expectEqual(2, board.white_count);
     try expectEqual(1, board.black_count);
     try expectEqual(44, board.gold_piece);
-    try expectEqual(.white, board.get_square(.{ .B, ._5 }));
-    try expectEqual(.black, board.get_square(.{ .H, ._6 }));
-    try expectEqual(.gold, board.get_square(.{ .E, ._5 }));
+    try expectEqual(.white, board.getSquare(.{ .B, ._5 }));
+    try expectEqual(.black, board.getSquare(.{ .H, ._6 }));
+    try expectEqual(.gold, board.getSquare(.{ .E, ._5 }));
 }
 
 test "place piece errors" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .B, ._5 });
-    try expectError(error.SquareOccupied, board.place_piece(.black, .{ .B, ._5 }));
+    try board.placePiece(.white, .{ .B, ._5 });
+    try expectError(error.SquareOccupied, board.placePiece(.black, .{ .B, ._5 }));
 
-    try board.place_piece(.gold, .{ .E, ._5 });
-    try expectError(error.GoldPieceAlreadyPlaced, board.place_piece(.gold, .{ .F, ._6 }));
+    try board.placePiece(.gold, .{ .E, ._5 });
+    try expectError(error.GoldPieceAlreadyPlaced, board.placePiece(.gold, .{ .F, ._6 }));
 }
 
 test "test index" {
@@ -841,30 +848,30 @@ test "test index" {
 test "move single piece" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .B, ._5 });
-    try board.place_piece(.black, .{ .I, ._8 });
-    try board.place_piece(.black, .{ .J, ._10 });
-    try expectEqual(.white, board.get_square(.{ .B, ._5 }));
-    try expectEqual(.black, board.get_square(.{ .I, ._8 }));
-    try expectEqual(.black, board.get_square(.{ .J, ._10 }));
+    try board.placePiece(.white, .{ .B, ._5 });
+    try board.placePiece(.black, .{ .I, ._8 });
+    try board.placePiece(.black, .{ .J, ._10 });
+    try expectEqual(.white, board.getSquare(.{ .B, ._5 }));
+    try expectEqual(.black, board.getSquare(.{ .I, ._8 }));
+    try expectEqual(.black, board.getSquare(.{ .J, ._10 }));
     try expectEqualSlices(u8, &[_]u8{14}, board.white_pieces[0..1]);
     try expectEqualSlices(u8, &[_]u8{ 87, 99 }, board.black_pieces[0..2]);
 
-    try board.move_single_piece(.{ .B, ._5 }, .{ .B, ._7 });
-    try expectEqual(.empty, board.get_square(.{ .B, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .B, ._7 }));
+    try board.moveSinglePiece(.{ .B, ._5 }, .{ .B, ._7 });
+    try expectEqual(.empty, board.getSquare(.{ .B, ._5 }));
+    try expectEqual(.white, board.getSquare(.{ .B, ._7 }));
     try expectEqualSlices(u8, &[_]u8{16}, board.white_pieces[0..1]);
     try expectEqualSlices(u8, &[_]u8{ 87, 99 }, board.black_pieces[0..2]);
 
-    try board.move_single_piece(.{ .I, ._8 }, .{ .C, ._8 });
-    try expectEqual(.empty, board.get_square(.{ .I, ._8 }));
-    try expectEqual(.black, board.get_square(.{ .C, ._8 }));
+    try board.moveSinglePiece(.{ .I, ._8 }, .{ .C, ._8 });
+    try expectEqual(.empty, board.getSquare(.{ .I, ._8 }));
+    try expectEqual(.black, board.getSquare(.{ .C, ._8 }));
     try expectEqualSlices(u8, &[_]u8{16}, board.white_pieces[0..1]);
     try expectEqualSlices(u8, &[_]u8{ 27, 99 }, board.black_pieces[0..2]);
 
-    try board.move_single_piece(.{ .J, ._10 }, .{ .D, ._4 });
-    try expectEqual(.empty, board.get_square(.{ .J, ._10 }));
-    try expectEqual(.black, board.get_square(.{ .D, ._4 }));
+    try board.moveSinglePiece(.{ .J, ._10 }, .{ .D, ._4 });
+    try expectEqual(.empty, board.getSquare(.{ .J, ._10 }));
+    try expectEqual(.black, board.getSquare(.{ .D, ._4 }));
     try expectEqualSlices(u8, &[_]u8{16}, board.white_pieces[0..1]);
     try expectEqualSlices(u8, &[_]u8{ 27, 33 }, board.black_pieces[0..2]);
 }
@@ -872,36 +879,36 @@ test "move single piece" {
 test "move single piece errors" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .B, ._5 });
-    try board.place_piece(.white, .{ .E, ._5 });
-    try board.place_piece(.white, .{ .B, ._6 });
-    try expectEqual(.white, board.get_square(.{ .B, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .E, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .B, ._6 }));
+    try board.placePiece(.white, .{ .B, ._5 });
+    try board.placePiece(.white, .{ .E, ._5 });
+    try board.placePiece(.white, .{ .B, ._6 });
+    try expectEqual(.white, board.getSquare(.{ .B, ._5 }));
+    try expectEqual(.white, board.getSquare(.{ .E, ._5 }));
+    try expectEqual(.white, board.getSquare(.{ .B, ._6 }));
     try expectEqualSlices(u8, &[_]u8{ 14, 44, 15 }, board.white_pieces[0..3]);
 
-    try expectError(error.SquareEmpty, board.move_single_piece(.{ .C, ._3 }, .{ .C, ._4 }));
-    try expectError(error.SquareOccupied, board.move_single_piece(.{ .B, ._5 }, .{ .E, ._5 }));
-    try expectError(error.SquareOccupied, board.move_single_piece(.{ .B, ._5 }, .{ .B, ._6 }));
-    try expectEqual(.white, board.get_square(.{ .B, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .E, ._5 }));
-    try expectEqual(.white, board.get_square(.{ .B, ._6 }));
+    try expectError(error.SquareEmpty, board.moveSinglePiece(.{ .C, ._3 }, .{ .C, ._4 }));
+    try expectError(error.SquareOccupied, board.moveSinglePiece(.{ .B, ._5 }, .{ .E, ._5 }));
+    try expectError(error.SquareOccupied, board.moveSinglePiece(.{ .B, ._5 }, .{ .B, ._6 }));
+    try expectEqual(.white, board.getSquare(.{ .B, ._5 }));
+    try expectEqual(.white, board.getSquare(.{ .E, ._5 }));
+    try expectEqual(.white, board.getSquare(.{ .B, ._6 }));
     try expectEqualSlices(u8, &[_]u8{ 14, 44, 15 }, board.white_pieces[0..3]);
 
-    try board.place_piece(.gold, .{ .E, ._6 });
-    try expectEqual(.gold, board.get_square(.{ .E, ._6 }));
+    try board.placePiece(.gold, .{ .E, ._6 });
+    try expectEqual(.gold, board.getSquare(.{ .E, ._6 }));
     try expectEqual(board.gold_piece, 45);
-    try expectError(error.MovingGoldNotAllowed, board.move_single_piece(.{ .E, ._6 }, .{ .E, ._7 }));
-    try expectEqual(.gold, board.get_square(.{ .E, ._6 }));
+    try expectError(error.MovingGoldNotAllowed, board.moveSinglePiece(.{ .E, ._6 }, .{ .E, ._7 }));
+    try expectEqual(.gold, board.getSquare(.{ .E, ._6 }));
     try expectEqual(board.gold_piece, 45);
 }
 
 test "execute placement" {
     var board: Board = .{};
 
-    try board.execute_placement(.white, .{ .A, ._1 });
-    try board.execute_placement(.black, .{ .J, ._10 });
-    try board.execute_placement(.gold, .{ .E, ._5 });
+    try board.executePlacement(.white, .{ .A, ._1 });
+    try board.executePlacement(.black, .{ .J, ._10 });
+    try board.executePlacement(.gold, .{ .E, ._5 });
 
     try expectBoardContent(
         board,
@@ -914,42 +921,42 @@ test "execute placement" {
 test "execute placement errors" {
     var board: Board = .{};
 
-    try board.execute_placement(.white, .{ .A, ._1 });
+    try board.executePlacement(.white, .{ .A, ._1 });
     try expectError(
         error.PieceBlockedByLowerNeighbor,
-        board.execute_placement(.white, .{ .A, ._2 }),
+        board.executePlacement(.white, .{ .A, ._2 }),
     );
 
     try expectError(
         error.PieceBlockedByLeftNeighbor,
-        board.execute_placement(.white, .{ .B, ._1 }),
+        board.executePlacement(.white, .{ .B, ._1 }),
     );
 
-    try board.execute_placement(.black, .{ .B, ._10 });
+    try board.executePlacement(.black, .{ .B, ._10 });
     try expectError(
         error.PieceBlockedByRightNeighbor,
-        board.execute_placement(.black, .{ .A, ._10 }),
+        board.executePlacement(.black, .{ .A, ._10 }),
     );
 
-    try board.execute_placement(.white, .{ .J, ._2 });
+    try board.executePlacement(.white, .{ .J, ._2 });
     try expectError(
         error.PieceBlockedByUpperNeighbor,
-        board.execute_placement(.white, .{ .J, ._1 }),
+        board.executePlacement(.white, .{ .J, ._1 }),
     );
 
-    try board.execute_placement(.gold, .{ .E, ._5 });
+    try board.executePlacement(.gold, .{ .E, ._5 });
     try expectError(
         error.GoldPieceAlreadyPlaced,
-        board.execute_placement(.gold, .{ .F, ._5 }),
+        board.executePlacement(.gold, .{ .F, ._5 }),
     );
 }
 
 test "execute move diagonally" {
     var board: Board = .{};
 
-    const top_left_pos = Corner.top_left.to_position();
-    try board.place_piece(.white, top_left_pos);
-    try board.place_piece(.black, .{ .I, ._8 });
+    const top_left_pos = Corner.top_left.toPosition();
+    try board.placePiece(.white, top_left_pos);
+    try board.placePiece(.black, .{ .I, ._8 });
 
     try expectBoardContent(
         board,
@@ -962,7 +969,7 @@ test "execute move diagonally" {
         .from = .top_left,
         .distance = 3,
     } };
-    try board.execute_move(.white, move);
+    try board.executeMove(.white, move);
 
     try expectBoardContent(
         board,
@@ -975,15 +982,15 @@ test "execute move diagonally" {
 test "execute move diagonally with obstruction error" {
     var board: Board = .{};
 
-    const bottom_left_pos = Corner.bottom_left.to_position();
-    try board.place_piece(.white, bottom_left_pos);
-    try board.place_piece(.black, .{ .C, ._3 }); // Obstruction
+    const bottom_left_pos = Corner.bottom_left.toPosition();
+    try board.placePiece(.white, bottom_left_pos);
+    try board.placePiece(.black, .{ .C, ._3 }); // Obstruction
 
     const move = Move{ .diagonal = .{
         .from = .bottom_left,
         .distance = 5,
     } };
-    try expectError(error.PathBlocked, board.execute_move(.white, move));
+    try expectError(error.PathBlocked, board.executeMove(.white, move));
 
     try expectBoardContent(
         board,
@@ -996,15 +1003,15 @@ test "execute move diagonally with obstruction error" {
 test "execute move horizontally with 2x3 block pushing 3 irregular pieces" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .B, ._5 });
-    try board.place_piece(.white, .{ .B, ._6 });
-    try board.place_piece(.white, .{ .C, ._5 });
-    try board.place_piece(.white, .{ .C, ._6 });
-    try board.place_piece(.white, .{ .D, ._5 });
-    try board.place_piece(.white, .{ .D, ._6 });
-    try board.place_piece(.black, .{ .E, ._5 });
-    try board.place_piece(.black, .{ .E, ._6 });
-    try board.place_piece(.black, .{ .F, ._5 });
+    try board.placePiece(.white, .{ .B, ._5 });
+    try board.placePiece(.white, .{ .B, ._6 });
+    try board.placePiece(.white, .{ .C, ._5 });
+    try board.placePiece(.white, .{ .C, ._6 });
+    try board.placePiece(.white, .{ .D, ._5 });
+    try board.placePiece(.white, .{ .D, ._6 });
+    try board.placePiece(.black, .{ .E, ._5 });
+    try board.placePiece(.black, .{ .E, ._6 });
+    try board.placePiece(.black, .{ .F, ._5 });
 
     const move = Move{ .horizontal = .{
         .from_x = .B,
@@ -1012,7 +1019,7 @@ test "execute move horizontally with 2x3 block pushing 3 irregular pieces" {
         .y = ._5,
         .block_height = ._2,
     } };
-    try board.execute_move(.white, move);
+    try board.executeMove(.white, move);
 
     try expectBoardContent(
         board,
@@ -1025,9 +1032,9 @@ test "execute move horizontally with 2x3 block pushing 3 irregular pieces" {
 test "execute move horizontally with invalid block shape error" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .B, ._5 });
-    try board.place_piece(.white, .{ .B, ._6 });
-    try board.place_piece(.white, .{ .C, ._5 });
+    try board.placePiece(.white, .{ .B, ._5 });
+    try board.placePiece(.white, .{ .B, ._6 });
+    try board.placePiece(.white, .{ .C, ._5 });
 
     const move = Move{ .horizontal = .{
         .from_x = .B,
@@ -1037,7 +1044,7 @@ test "execute move horizontally with invalid block shape error" {
     } };
     try expectError(
         error.InvalidBlockShape,
-        board.execute_move(.white, move),
+        board.executeMove(.white, move),
     );
 
     try expectBoardContent(
@@ -1051,8 +1058,8 @@ test "execute move horizontally with invalid block shape error" {
 test "execute move horizontally with block cannot move sideways error" {
     var board: Board = .{};
 
-    try board.place_piece(.white, .{ .B, ._5 });
-    try board.place_piece(.white, .{ .B, ._6 });
+    try board.placePiece(.white, .{ .B, ._5 });
+    try board.placePiece(.white, .{ .B, ._6 });
 
     const move = Move{ .horizontal = .{
         .from_x = .B,
@@ -1062,7 +1069,7 @@ test "execute move horizontally with block cannot move sideways error" {
     } };
     try expectError(
         error.BlockCannotMoveSideways,
-        board.execute_move(.white, move),
+        board.executeMove(.white, move),
     );
 
     try expectBoardContent(
@@ -1076,15 +1083,15 @@ test "execute move horizontally with block cannot move sideways error" {
 test "execute move vertically with 3x2 block pushing 2 irregular pieces" {
     var board: Board = .{};
 
-    try board.place_piece(.black, .{ .F, ._8 });
-    try board.place_piece(.black, .{ .G, ._8 });
-    try board.place_piece(.black, .{ .F, ._9 });
-    try board.place_piece(.black, .{ .G, ._9 });
-    try board.place_piece(.black, .{ .F, ._10 });
-    try board.place_piece(.black, .{ .G, ._10 });
-    try board.place_piece(.white, .{ .F, ._7 });
-    try board.place_piece(.white, .{ .G, ._7 });
-    try board.place_piece(.white, .{ .F, ._6 });
+    try board.placePiece(.black, .{ .F, ._8 });
+    try board.placePiece(.black, .{ .G, ._8 });
+    try board.placePiece(.black, .{ .F, ._9 });
+    try board.placePiece(.black, .{ .G, ._9 });
+    try board.placePiece(.black, .{ .F, ._10 });
+    try board.placePiece(.black, .{ .G, ._10 });
+    try board.placePiece(.white, .{ .F, ._7 });
+    try board.placePiece(.white, .{ .G, ._7 });
+    try board.placePiece(.white, .{ .F, ._6 });
 
     const move = Move{ .vertical = .{
         .from_y = ._10,
@@ -1092,7 +1099,7 @@ test "execute move vertically with 3x2 block pushing 2 irregular pieces" {
         .x = .F,
         .block_width = ._2,
     } };
-    try board.execute_move(.black, move);
+    try board.executeMove(.black, move);
 
     try expectBoardContent(
         board,
@@ -1105,9 +1112,9 @@ test "execute move vertically with 3x2 block pushing 2 irregular pieces" {
 test "execute move vertically with invalid block shape error" {
     var board: Board = .{};
 
-    try board.place_piece(.black, .{ .H, ._8 });
-    try board.place_piece(.black, .{ .H, ._9 });
-    try board.place_piece(.black, .{ .I, ._9 });
+    try board.placePiece(.black, .{ .H, ._8 });
+    try board.placePiece(.black, .{ .H, ._9 });
+    try board.placePiece(.black, .{ .I, ._9 });
 
     const move = Move{ .vertical = .{
         .from_y = ._9,
@@ -1117,7 +1124,7 @@ test "execute move vertically with invalid block shape error" {
     } };
     try expectError(
         error.InvalidBlockShape,
-        board.execute_move(.black, move),
+        board.executeMove(.black, move),
     );
 
     try expectBoardContent(
@@ -1131,8 +1138,8 @@ test "execute move vertically with invalid block shape error" {
 test "execute move vertically with block cannot move sideways error" {
     var board: Board = .{};
 
-    try board.place_piece(.black, .{ .D, ._8 });
-    try board.place_piece(.black, .{ .E, ._8 });
+    try board.placePiece(.black, .{ .D, ._8 });
+    try board.placePiece(.black, .{ .E, ._8 });
 
     const move = Move{ .vertical = .{
         .from_y = ._8,
@@ -1142,7 +1149,7 @@ test "execute move vertically with block cannot move sideways error" {
     } };
     try expectError(
         error.BlockCannotMoveSideways,
-        board.execute_move(.black, move),
+        board.executeMove(.black, move),
     );
 
     try expectBoardContent(

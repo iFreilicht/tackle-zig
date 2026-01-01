@@ -13,8 +13,8 @@ const RowY = position.RowY;
 const Position = position.Position;
 const BlockSize = position.BlockSize;
 
-const int_from_pos = position.int_from_pos;
-const pos_from_int = position.pos_from_int;
+const intFromPos = position.intFromPos;
+const posFromInt = position.posFromInt;
 
 pub const DiagonalMove = struct {
     from: Corner,
@@ -22,11 +22,11 @@ pub const DiagonalMove = struct {
 
     /// Return the starting Position of this diagonal move.
     pub fn start(self: @This()) Position {
-        return self.from.to_position();
+        return self.from.toPosition();
     }
     /// Return the ending Position of this diagonal move.
     pub fn end(self: @This()) Position {
-        const start_x, const start_y = int_from_pos(self.start());
+        const start_x, const start_y = intFromPos(self.start());
         const end_x: u4 = switch (self.from) {
             .bottom_left => start_x + self.distance,
             .bottom_right => start_x - self.distance,
@@ -39,7 +39,7 @@ pub const DiagonalMove = struct {
             .top_left => start_y - self.distance,
             .top_right => start_y - self.distance,
         };
-        return pos_from_int(.{ end_x, end_y });
+        return posFromInt(.{ end_x, end_y });
     }
 
     pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
@@ -55,14 +55,14 @@ pub const HorizontalMove = struct {
     y: RowY,
     block_height: BlockSize = .no_block,
 
-    fn is_block(self: @This()) bool {
+    fn isBlock(self: @This()) bool {
         return self.block_height != .no_block;
     }
 
     pub fn start(self: @This()) Position {
         return .{ self.from_x, self.y };
     }
-    pub fn start_block_end(self: @This()) Position {
+    pub fn startBlockEnd(self: @This()) Position {
         return .{ self.from_x, self.y.plus(@intFromEnum(self.block_height)) };
     }
     pub fn direction(self: @This()) Direction {
@@ -71,15 +71,15 @@ pub const HorizontalMove = struct {
     pub fn distance(self: @This()) u4 {
         return self.from_x.distance(self.to_x);
     }
-    pub fn block_breadth(self: @This()) u4 {
-        return self.block_height.num_pieces();
+    pub fn blockBreadth(self: @This()) u4 {
+        return self.block_height.numPieces();
     }
 
     pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
         const start_x = self.from_x;
         const end_x = self.to_x;
         const start_y = self.y;
-        if (self.is_block()) {
+        if (self.isBlock()) {
             const block_y = start_y.plus(@intFromEnum(self.block_height));
             _ = try writer.print("▢{f}{d}{d}-{f}{d}{d}", .{
                 start_x,
@@ -106,14 +106,14 @@ pub const VerticalMove = struct {
     x: ColumnX,
     block_width: BlockSize = .no_block,
 
-    fn is_block(self: @This()) bool {
+    fn isBlock(self: @This()) bool {
         return self.block_width != .no_block;
     }
 
     pub fn start(self: @This()) Position {
         return .{ self.x, self.from_y };
     }
-    pub fn start_block_end(self: @This()) Position {
+    pub fn startBlockEnd(self: @This()) Position {
         return .{ self.x.plus(@intFromEnum(self.block_width)), self.from_y };
     }
     pub fn direction(self: @This()) Direction {
@@ -122,15 +122,15 @@ pub const VerticalMove = struct {
     pub fn distance(self: @This()) u4 {
         return self.from_y.distance(self.to_y);
     }
-    pub fn block_breadth(self: @This()) u4 {
-        return self.block_width.num_pieces();
+    pub fn blockBreadth(self: @This()) u4 {
+        return self.block_width.numPieces();
     }
 
     pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
         const start_x = self.x;
         const start_y = self.from_y;
         const end_y = self.to_y;
-        if (self.is_block()) {
+        if (self.isBlock()) {
             const block_x = start_x.plus(@intFromEnum(self.block_width));
             _ = try writer.print("{s}{f}{f}{d}-{f}{f}{d}", .{
                 block_sigil,

@@ -26,9 +26,9 @@ const Position = position.Position;
 const Move = move_module.Move;
 const BlockSize = position.BlockSize;
 const Direction = enums.Direction;
-const move_position = position.move_position;
-const move_position_if_possible = position.move_position_if_possible;
-const pos_from_int = position.pos_from_int;
+const movePosition = position.movePosition;
+const movePositionIfPossible = position.movePositionIfPossible;
+const posFromInt = position.posFromInt;
 
 pub const Phase = enum(u2) {
     /// Initial phase where pieces are placed on the board
@@ -57,18 +57,18 @@ pub const GameState = struct {
     }
 
     /// Which player's turn it is
-    pub fn current_player(self: GameState) Player {
+    pub fn currentPlayer(self: GameState) Player {
         return if (self.turn % 2 == 0) .white else .black;
     }
 
-    pub fn pieces_per_player(self: GameState) u4 {
+    pub fn piecesPerPlayer(self: GameState) u4 {
         return self.job.total_pieces + 2;
     }
 
-    fn end_turn(self: *GameState) void {
+    fn endTurn(self: *GameState) void {
         switch (self.phase) {
             .opening => {
-                if (self.turn == self.pieces_per_player() * 2 - 1) {
+                if (self.turn == self.piecesPerPlayer() * 2 - 1) {
                     self.phase = .place_gold;
                     // Placing the gold piece is part of black's last turn during
                     // the opening, so DON'T increment the turn number here!
@@ -81,7 +81,7 @@ pub const GameState = struct {
                 self.turn += 1;
             },
             .main => {
-                const finished = self.job.is_fulfilled(self.board, self.current_player());
+                const finished = self.job.isFulfilled(self.board, self.currentPlayer());
                 if (finished) {
                     self.phase = .finished;
                     return;
@@ -94,29 +94,29 @@ pub const GameState = struct {
 
     /// Place a piece for the current player and end their turn,
     /// checking for game rules.
-    pub fn place_next_piece(self: *GameState, at: Position) !void {
+    pub fn placeNextPiece(self: *GameState, at: Position) !void {
         switch (self.phase) {
             .opening => {
-                const color = PieceColor.from_player(self.current_player());
-                try self.board.execute_placement(color, at);
+                const color = PieceColor.fromPlayer(self.currentPlayer());
+                try self.board.executePlacement(color, at);
             },
             .place_gold => {
-                try self.board.execute_placement(.gold, at);
+                try self.board.executePlacement(.gold, at);
             },
             .main => return error.InvalidPhase,
             .finished => return error.InvalidPhase,
         }
 
-        self.end_turn();
+        self.endTurn();
     }
 
     /// Execute a move for the specified player, checking for turn order and phase validity.
-    pub fn execute_move(self: *GameState, player: Player, move: Move) !void {
-        if (player != self.current_player()) return error.NotYourTurn;
+    pub fn executeMove(self: *GameState, player: Player, move: Move) !void {
+        if (player != self.currentPlayer()) return error.NotYourTurn;
         if (self.phase != .main) return error.InvalidPhase;
 
-        try self.board.execute_move(player, move);
+        try self.board.executeMove(player, move);
 
-        self.end_turn();
+        self.endTurn();
     }
 };

@@ -1,6 +1,7 @@
 const std = @import("std");
 const tackle = @import("root.zig");
-const text_renderer = tackle.text_renderer;
+
+const renderBoard = tackle.TextRenderer.renderBoard;
 
 pub fn main() !void {
     const ui = struct {
@@ -57,7 +58,7 @@ pub fn main() !void {
 
         pub fn render(state: tackle.GameState) !void {
             std.debug.print("\n\n", .{});
-            try text_renderer.renderBoard(&writer.interface, state.board);
+            try renderBoard(&writer.interface, state.board);
             const player = state.currentPlayer();
             switch (state.phase) {
                 .opening => std.debug.print("Turn {}, {t}'s turn to place a piece.\n", .{ state.turn, player }),

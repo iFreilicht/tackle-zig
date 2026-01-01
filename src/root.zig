@@ -1,14 +1,15 @@
 const std = @import("std");
 
-pub const board = @import("board.zig");
+pub const Block = @import("Block.zig");
+pub const Board = @import("Board.zig");
 pub const enums = @import("enums.zig");
 pub const constants = @import("constants.zig");
-pub const job = @import("job.zig");
+pub const Job = @import("Job.zig");
 pub const move = @import("move.zig");
 pub const notation = @import("notation.zig");
 pub const position = @import("position.zig");
-pub const state = @import("state.zig");
-pub const text_renderer = @import("text_renderer.zig");
+pub const GameState = @import("GameState.zig");
+pub const TextRenderer = @import("TextRenderer.zig");
 
 const board_size = constants.board_size;
 const max_job_size = constants.max_job_size;
@@ -16,8 +17,6 @@ const column_letters = constants.column_letters;
 
 pub const Position = position.Position;
 pub const Move = move.Move;
-pub const GameState = state.GameState;
-pub const Job = job.Job;
 pub const parsePosition = notation.parsePosition;
 pub const parseTurn = notation.parseTurn;
 
@@ -159,10 +158,9 @@ test "game loop runs without errors" {
 
     // This renders the final board state to stdout for visual feedback during testing.
     // It's not strictly necessary for the test itself, but I like it.
-    try text_renderer.debugPrintBoard(final_state.board);
+    try TextRenderer.debugPrintBoard(final_state.board);
 
-    try board.expectBoardContent(
-        final_state.board,
+    try final_state.board.expectContent(
         &.{ .{ .C, ._10 }, .{ .C, ._6 }, .{ .D, ._6 }, .{ .E, ._6 }, .{ .J, ._9 } },
         &.{ .{ .B, ._1 }, .{ .D, ._8 }, .{ .E, ._1 }, .{ .E, ._8 }, .{ .A, ._8 } },
         .{ .D, ._5 },

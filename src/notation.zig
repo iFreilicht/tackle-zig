@@ -1,24 +1,20 @@
 const std = @import("std");
 
-const constants = @import("constants.zig");
-const enums = @import("enums.zig");
-const move_module = @import("move.zig");
-const position = @import("position.zig");
-const state = @import("state.zig");
+const tackle = @import("root.zig");
 
-const column_letters = constants.column_letters;
-const block_sigil = constants.block_sigil;
+const column_letters = tackle.constants.column_letters;
+const block_sigil = tackle.constants.block_sigil;
 const max_turn_str_len = 22;
 
-const Move = move_module.Move;
-const Corner = position.Corner;
-const ColumnX = position.ColumnX;
-const RowY = position.RowY;
-const Position = position.Position;
-const BlockSize = position.BlockSize;
-const getBlockWidth = position.getBlockWidth;
-const getBlockHeight = position.getBlockHeight;
-const Player = enums.Player;
+const Move = tackle.Move;
+const Corner = tackle.position.Corner;
+const ColumnX = tackle.position.ColumnX;
+const RowY = tackle.position.RowY;
+const Position = tackle.position.Position;
+const BlockSize = tackle.position.BlockSize;
+const getBlockWidth = tackle.position.getBlockWidth;
+const getBlockHeight = tackle.position.getBlockHeight;
+const Player = tackle.enums.Player;
 
 const CommentQuality = enum {
     very_good, // (!!)

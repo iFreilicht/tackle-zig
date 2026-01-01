@@ -1,20 +1,18 @@
 const std = @import("std");
 
-const constants = @import("constants.zig");
-const enums = @import("enums.zig");
-const position = @import("position.zig");
+const tackle = @import("root.zig");
 
-const block_sigil = constants.block_sigil;
+const block_sigil = tackle.constants.block_sigil;
 
-const Direction = enums.Direction;
-const Corner = position.Corner;
-const ColumnX = position.ColumnX;
-const RowY = position.RowY;
-const Position = position.Position;
-const BlockSize = position.BlockSize;
+const Direction = tackle.enums.Direction;
+const Corner = tackle.position.Corner;
+const ColumnX = tackle.position.ColumnX;
+const RowY = tackle.position.RowY;
+const Position = tackle.position.Position;
+const BlockSize = tackle.position.BlockSize;
 
-const intFromPos = position.intFromPos;
-const posFromInt = position.posFromInt;
+const intFromPos = tackle.position.intFromPos;
+const posFromInt = tackle.position.posFromInt;
 
 pub const DiagonalMove = struct {
     from: Corner,

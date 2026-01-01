@@ -1,9 +1,9 @@
 const std = @import("std");
-const constants = @import("constants.zig");
-const enums = @import("enums.zig");
 
-const column_letters = constants.column_letters;
-const Direction = enums.Direction;
+const tackle = @import("root.zig");
+
+const column_letters = tackle.constants.column_letters;
+const Direction = tackle.enums.Direction;
 
 pub const Corner = enum {
     bottom_left, // A1

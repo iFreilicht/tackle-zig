@@ -4,10 +4,10 @@ pub const Direction = enum(u2) {
     up,
     /// Along column, decreasing row
     down,
-    /// Along row, decreasing column
-    left,
     /// Along row, increasing column
     right,
+    /// Along row, decreasing column
+    left,
 };
 
 /// Player colors

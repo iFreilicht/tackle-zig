@@ -93,6 +93,10 @@ pub const RowY = enum(u4) {
         return i - 1;
     }
 
+    pub fn fromIndex(idx: u4) @This() {
+        return @enumFromInt(idx + 1);
+    }
+
     pub fn plus(self: @This(), block_size: u4) @This() {
         return @enumFromInt(@intFromEnum(self) + block_size);
     }
@@ -159,6 +163,10 @@ pub const ColumnX = enum(u4) {
     pub fn index(self: @This()) u4 {
         const i = @intFromEnum(self);
         return i - 1;
+    }
+
+    pub fn fromIndex(idx: u4) @This() {
+        return @enumFromInt(idx + 1);
     }
 
     pub fn plus(self: @This(), block_size: u4) @This() {

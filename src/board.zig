@@ -21,6 +21,7 @@ const Direction = enums.Direction;
 const PieceColor = enums.PieceColor;
 const Player = enums.Player;
 const SquareContent = enums.SquareContent;
+const BlockSize = position.BlockSize;
 const Corner = position.Corner;
 const Position = position.Position;
 
@@ -29,13 +30,6 @@ const movePosition = position.movePosition;
 const movePositionIfPossible = position.movePositionIfPossible;
 const isOnBorder = position.isOnBorder;
 const isInCore = position.isInCore;
-
-pub const MoveIterator = struct {
-    board: Board,
-    allocator: Allocator,
-    player: Player,
-    piece_indices: []const u8,
-};
 
 /// Representation of the game board and the pieces on it.
 pub const Board = struct {
@@ -58,6 +52,12 @@ pub const Board = struct {
 
     // Max index is 10*10=100, so we can use a sentinel value to represent the empty state
     const GOLD_EMPTY = 0xff;
+
+    fn positionFromIndex(idx: u8) Position {
+        const col = position.ColumnX.fromIndex(@intCast(idx / board_size));
+        const row = position.RowY.fromIndex(@intCast(idx % board_size));
+        return .{ col, row };
+    }
 
     pub fn index(pos: Position) u8 {
         const col, const row = pos;
@@ -222,6 +222,9 @@ pub const Board = struct {
         distance: u4,
         /// This is also called "block strength" in the game rules
         block_length: u4,
+        /// Positions of all pieces that would need to be moved in order to perform the move.
+        /// The positions are ordered from rear to front in the movement direction, so the piece
+        /// that is pushing is guaranteed to be first.
         positions: []const Position,
     };
 
@@ -229,6 +232,7 @@ pub const Board = struct {
     /// considering all game rules about blocks, piece colors, and pushing opponent pieces.
     /// It is guaranteed that the returned `MoveList` contains valid input for `moveManyPieces` and that
     /// performing that move will not violate any game rules.
+    /// It is guaranteed that no more than 10 elements will be written to `position_buffer`.
     fn getMaxMoveList(self: Board, start: Position, direction: Direction, position_buffer: []Position) MoveList {
         var distance: u4 = 0;
         var current_pos = start;
@@ -402,6 +406,122 @@ pub const Board = struct {
                 try self.moveManyPieces(start_positions_buffer[0..pos_index], direction, distance);
             },
         }
+    }
+
+    pub const MoveIterator = struct {
+        board: Board,
+        player: Player,
+        piece_indices: [max_pieces_per_player]u8,
+        current_piece_indices_index: usize = 0,
+        current_direction: Direction = .up,
+
+        current_start_position: ?Position = null,
+        current_block_breadth: BlockSize = .no_block,
+        current_maximum_distance: u4 = 0,
+        current_distance: u4 = 1,
+
+        fn setNextDirectionAndPiece(self: *MoveIterator) void {
+            self.current_direction = switch (self.current_direction) {
+                .up => .down,
+                .down => .right,
+                .right => .left,
+                .left => .up,
+            };
+            if (self.current_direction == .up) self.current_piece_indices_index += 1;
+        }
+
+        fn getCurrentPieceIndex(self: *MoveIterator) ?u8 {
+            if (self.current_piece_indices_index >= self.piece_indices.len) return null;
+            return self.piece_indices[self.current_piece_indices_index];
+        }
+
+        fn setNextMaximumMoveProperties(self: *MoveIterator) !void {
+            // This data will be thrown away before returning, so we can safely allocate it on the stack
+            var positions_buffer: [10]Position = undefined;
+
+            // TODO: Logic that detects if diagonal moves from the corners are possible and handles them accordingly
+            // Right now, only horizontal and vertical moves are handled
+            const next_move_list = while (true) {
+                const piece_idx = self.getCurrentPieceIndex() orelse break null;
+                const start_pos = Board.positionFromIndex(piece_idx);
+
+                // TODO: Logic that detects if block moves with a breadth of 2 or more are possible and handles them accordingly
+                // Right now, we only handle block moves with a breadth of 1, i.e. `BlockSize.no_block`
+                const ml = self.board.getMaxMoveList(
+                    start_pos,
+                    self.current_direction,
+                    &positions_buffer,
+                );
+                if (ml.positions.len == 0) {
+                    self.setNextDirectionAndPiece();
+                    continue;
+                }
+                break ml;
+            };
+
+            self.current_distance = 1;
+            self.current_block_breadth = .no_block;
+            if (next_move_list) |ml| {
+                self.current_start_position = ml.positions[0];
+                self.current_maximum_distance = ml.distance;
+            } else {
+                self.current_start_position = null;
+                self.current_maximum_distance = 0;
+            }
+        }
+
+        pub fn next(self: *MoveIterator) !?Move {
+            // Check if iteration has finished
+            if (self.current_piece_indices_index >= self.piece_indices.len) return null;
+
+            if (self.current_start_position == null) {
+                // Search for first move
+                try self.setNextMaximumMoveProperties();
+            } else if (self.current_distance > self.current_maximum_distance) {
+                // Move to next possible move
+                self.setNextDirectionAndPiece();
+                try self.setNextMaximumMoveProperties();
+            }
+            if (self.current_start_position == null) {
+                // No more moves available
+                return null;
+            }
+
+            const start_pos = self.current_start_position.?;
+            const target_pos = movePosition(start_pos, self.current_direction, self.current_distance);
+            const move: Move = switch (self.current_direction) {
+                .up, .down => .{ .vertical = .{
+                    .from_y = start_pos.@"1",
+                    .to_y = target_pos.@"1",
+                    .x = start_pos.@"0",
+                    .block_width = .no_block,
+                } },
+                .left, .right => .{ .horizontal = .{
+                    .from_x = start_pos.@"0",
+                    .to_x = target_pos.@"0",
+                    .y = start_pos.@"1",
+                    .block_height = .no_block,
+                } },
+            };
+
+            // Return current move and increment distance for next call
+            self.current_distance += 1;
+            return move;
+        }
+    };
+
+    /// Return an iterator over all possible moves for the specified player in the current board state.
+    pub fn getPossibleMoves(self: Board, player: Player) !MoveIterator {
+        const piece_indices = switch (player) {
+            .white => self.white_pieces,
+            .black => self.black_pieces,
+        };
+
+        return MoveIterator{
+            .board = self,
+            .player = player,
+            .piece_indices = piece_indices,
+        };
     }
 };
 
@@ -1158,4 +1278,70 @@ test "execute move vertically with block cannot move sideways error" {
         &.{ .{ .D, ._8 }, .{ .E, ._8 } },
         null,
     );
+}
+
+test "getPossibleMoves iterates properly" {
+    var board: Board = .{};
+
+    try board.placePiece(.white, .{ .B, ._5 });
+    try board.placePiece(.white, .{ .C, ._5 });
+    try board.placePiece(.black, .{ .C, ._8 });
+
+    var move_iterator = try board.getPossibleMoves(.white);
+
+    const expected_moves = [_]Move{
+        // Moves for white piece at B5
+        // Vertical moves up
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._6, .x = .B, .block_width = .no_block } },
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._7, .x = .B, .block_width = .no_block } },
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._8, .x = .B, .block_width = .no_block } },
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._9, .x = .B, .block_width = .no_block } },
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._10, .x = .B, .block_width = .no_block } },
+        // Vertical moves down
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._4, .x = .B, .block_width = .no_block } },
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._3, .x = .B, .block_width = .no_block } },
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._2, .x = .B, .block_width = .no_block } },
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._1, .x = .B, .block_width = .no_block } },
+        // Horizontal moves right
+        .{ .horizontal = .{ .from_x = .B, .to_x = .C, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .B, .to_x = .D, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .B, .to_x = .E, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .B, .to_x = .F, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .B, .to_x = .G, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .B, .to_x = .H, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .B, .to_x = .I, .y = ._5, .block_height = .no_block } },
+        // No move to J5 because white piece at C5 is pushed there
+        // Horizontal moves left
+        .{ .horizontal = .{ .from_x = .B, .to_x = .A, .y = ._5, .block_height = .no_block } },
+
+        // Moves for white piece at C5
+        // Vertical moves up
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._6, .x = .C, .block_width = .no_block } },
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._7, .x = .C, .block_width = .no_block } },
+        // No move to C8 or higher because black piece there blocks the way
+        // Vertical moves down
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._4, .x = .C, .block_width = .no_block } },
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._3, .x = .C, .block_width = .no_block } },
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._2, .x = .C, .block_width = .no_block } },
+        .{ .vertical = .{ .from_y = ._5, .to_y = ._1, .x = .C, .block_width = .no_block } },
+        // Horizontal moves right
+        .{ .horizontal = .{ .from_x = .C, .to_x = .D, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .C, .to_x = .E, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .C, .to_x = .F, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .C, .to_x = .G, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .C, .to_x = .H, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .C, .to_x = .I, .y = ._5, .block_height = .no_block } },
+        .{ .horizontal = .{ .from_x = .C, .to_x = .J, .y = ._5, .block_height = .no_block } },
+        // Horizontal moves left
+        .{ .horizontal = .{ .from_x = .C, .to_x = .B, .y = ._5, .block_height = .no_block } },
+        // No move to A5 because white piece at B5 is pushed there
+    };
+
+    var move_index: usize = 0;
+    while (try move_iterator.next()) |move| {
+        try expectEqualDeep(expected_moves[move_index], move);
+        move_index += 1;
+    }
+
+    try expectEqual(expected_moves.len, move_index);
 }

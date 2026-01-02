@@ -232,6 +232,7 @@ const MoveList = struct {
 /// It is guaranteed that the returned `MoveList` contains valid input for `moveManyPieces` and that
 /// performing that move will not violate any game rules.
 /// It is guaranteed that no more than 10 elements will be written to `position_buffer`.
+/// To determine whether a move is possible at all, check whether the returned `MoveList.distance` is greater than 0.
 fn getMaxMoveList(self: Board, start: Position, direction: Direction, position_buffer: []Position) MoveList {
     var distance: u4 = 0;
     var current_pos = start;
@@ -407,19 +408,41 @@ pub fn executeMove(self: *Board, player: Player, move: Move) !void {
     }
 }
 
+/// Iterator over all possible moves for a player in the current board state.
+/// It basically works like three nested loops:
+/// 1. Iterate over all pieces of the player
+/// 2. For each piece, iterate over all four directions
+/// 3. For each piece and direction, iterate over all possible distances the piece can move
+/// The implementation is a little messy but I couldn't find a cleaner way to do it yet.
 pub const MoveIterator = struct {
     board: Board,
     player: Player,
     piece_indices: [max_pieces_per_player]u8,
+
+    // Iteration variables for the three loops
     current_piece_indices_index: usize = 0,
     current_direction: Direction = .up,
-
-    current_start_position: ?Position = null,
-    current_block_breadth: BlockSize = .no_block,
-    current_maximum_distance: u4 = 0,
     current_distance: u4 = 1,
 
+    // Current move properties
+    move_props: MoveProps = .starting,
+
+    const ValidMoveProps = struct {
+        start: Position,
+        block_breadth: BlockSize,
+        maximum_distance: u4,
+    };
+
+    const MoveProps = union(enum) {
+        starting,
+        valid: ValidMoveProps,
+        exhausted,
+    };
+
+    /// Update the iterator state to point to the next direction and potentially next piece.
+    /// This implements the 1. and 2. loops described above.
     fn setNextDirectionAndPiece(self: *MoveIterator) void {
+        self.current_distance = 1;
         self.current_direction = switch (self.current_direction) {
             .up => .down,
             .down => .right,
@@ -429,19 +452,19 @@ pub const MoveIterator = struct {
         if (self.current_direction == .up) self.current_piece_indices_index += 1;
     }
 
-    fn getCurrentPieceIndex(self: *MoveIterator) ?u8 {
+    fn getCurrentPieceIndex(self: MoveIterator) ?u8 {
         if (self.current_piece_indices_index >= self.piece_indices.len) return null;
         return self.piece_indices[self.current_piece_indices_index];
     }
 
-    fn setNextMaximumMoveProperties(self: *MoveIterator) !void {
+    fn getNextMoveProperties(self: *MoveIterator) !MoveProps {
         // This data will be thrown away before returning, so we can safely allocate it on the stack
         var positions_buffer: [board_edge_length]Position = undefined;
 
         // TODO: Logic that detects if diagonal moves from the corners are possible and handles them accordingly
         // Right now, only horizontal and vertical moves are handled
         const next_move_list = while (true) {
-            const piece_idx = self.getCurrentPieceIndex() orelse break null;
+            const piece_idx = self.getCurrentPieceIndex() orelse return .exhausted;
             const start_pos = Board.positionFromIndex(piece_idx);
 
             // TODO: Logic that detects if block moves with a breadth of 2 or more are possible and handles them accordingly
@@ -451,43 +474,50 @@ pub const MoveIterator = struct {
                 self.current_direction,
                 &positions_buffer,
             );
-            if (ml.positions.len == 0) {
+            if (ml.distance == 0) {
                 self.setNextDirectionAndPiece();
                 continue;
             }
             break ml;
         };
 
-        self.current_distance = 1;
-        self.current_block_breadth = .no_block;
-        if (next_move_list) |ml| {
-            self.current_start_position = ml.positions[0];
-            self.current_maximum_distance = ml.distance;
-        } else {
-            self.current_start_position = null;
-            self.current_maximum_distance = 0;
-        }
+        return .{ .valid = .{
+            .start = next_move_list.positions[0],
+            .block_breadth = .no_block,
+            .maximum_distance = next_move_list.distance,
+        } };
     }
 
     pub fn next(self: *MoveIterator) !?Move {
-        // Check if iteration has finished
-        if (self.current_piece_indices_index >= self.piece_indices.len) return null;
-
-        if (self.current_start_position == null) {
-            // Search for first move
-            try self.setNextMaximumMoveProperties();
-        } else if (self.current_distance > self.current_maximum_distance) {
-            // Move to next possible move
-            self.setNextDirectionAndPiece();
-            try self.setNextMaximumMoveProperties();
+        switch (self.move_props) {
+            .starting => {
+                self.move_props = try self.getNextMoveProperties();
+            },
+            .valid => |vm| {
+                // Increment the current distance. This implements the 3. loop described above.
+                self.current_distance += 1;
+                // Check if we have exhausted all distances for the current piece and direction
+                if (self.current_distance > vm.maximum_distance) {
+                    self.setNextDirectionAndPiece();
+                    self.move_props = try self.getNextMoveProperties();
+                }
+            },
+            .exhausted => return null,
         }
-        if (self.current_start_position == null) {
-            // No more moves available
-            return null;
-        }
 
-        const start_pos = self.current_start_position.?;
-        const target_pos = movePosition(start_pos, self.current_direction, self.current_distance);
+        const move_props = switch (self.move_props) {
+            .starting => unreachable,
+            .valid => |vm| vm,
+            // No additional moves were found
+            .exhausted => return null,
+        };
+
+        const start_pos = move_props.start;
+        const target_pos = movePosition(
+            start_pos,
+            self.current_direction,
+            self.current_distance,
+        );
         const move: Move = switch (self.current_direction) {
             .up, .down => .{ .vertical = .{
                 .from_y = start_pos.@"1",
@@ -503,8 +533,6 @@ pub const MoveIterator = struct {
             } },
         };
 
-        // Return current move and increment distance for next call
-        self.current_distance += 1;
         return move;
     }
 };

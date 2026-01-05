@@ -1,0 +1,14 @@
+# Simple data file containing an example setup for turm3
+turm3
+A10
+B1
+J9
+E1
+C1
+J8
+J6
+E10
+# I want to test placing pieces as well, so leaving these commented out for now
+# C10
+# A8
+# D5

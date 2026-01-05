@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const Block = @import("Block.zig");
 pub const Board = @import("Board.zig");
+pub const DataFile = @import("DataFile.zig");
 pub const enums = @import("enums.zig");
 pub const constants = @import("constants.zig");
 pub const Job = @import("Job.zig");
@@ -13,23 +14,28 @@ pub const TextRenderer = @import("TextRenderer.zig");
 
 pub const Position = position.Position;
 pub const Move = move.Move;
+pub const Turn = notation.Turn;
 pub const parsePosition = notation.parsePosition;
 pub const parseTurn = notation.parseTurn;
 
 /// Place some demo pieces on the board to speed up testing.
 pub fn placeDemoPieces(game_state: *GameState) !void {
-    try game_state.placeNextPiece(.{ .A, ._10 }); // White
-    try game_state.placeNextPiece(.{ .B, ._1 }); // Black
-    try game_state.placeNextPiece(.{ .J, ._9 }); // White
-    try game_state.placeNextPiece(.{ .E, ._1 }); // Black
-    try game_state.placeNextPiece(.{ .C, ._1 }); // White
-    try game_state.placeNextPiece(.{ .J, ._8 }); // Black
-    try game_state.placeNextPiece(.{ .J, ._6 }); // White
-    try game_state.placeNextPiece(.{ .E, ._10 }); // Black
-    // I want to test placing pieces as well, so leaving these commented out for now.
-    //try game_state.placeNextPiece(.{ .C, ._10 }); // White
-    //try game_state.placeNextPiece(.{ .A, ._8 }); // Black
-    //try game_state.placeNextPiece(.{ .D, ._5 }); // Gold
+    // This number of bytes should be enough for the setup file.
+    // The test will fail with OOM if it isn't.
+    const num_bytes = 4096;
+    const datafile_content = @embedFile("test_data/setup.txt");
+
+    var datafile_buffer: [num_bytes]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&datafile_buffer);
+    const allocator = fba.allocator();
+
+    var reader = std.io.Reader.fixed(datafile_content);
+
+    const datafile = try DataFile.load(allocator, &reader);
+
+    for (datafile.placements.items) |placement| {
+        try game_state.placeNextPiece(placement);
+    }
 }
 
 /// Interface for callbacks to user input and output.
@@ -164,4 +170,14 @@ test "game loop runs without errors" {
 
     try std.testing.expectEqual(final_state.phase, .finished);
     try std.testing.expectEqual(final_state.turn, 14);
+}
+
+test placeDemoPieces {
+    var state = GameState.init(Job.turm3());
+
+    try placeDemoPieces(&state);
+
+    try std.testing.expectEqual(.white, state.board.getSquare(.{ .A, ._10 }));
+    try std.testing.expectEqual(.black, state.board.getSquare(.{ .B, ._1 }));
+    // Don't test all pieces, the content of setup.txt may change.
 }

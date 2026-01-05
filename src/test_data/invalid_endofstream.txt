@@ -1,0 +1,4 @@
+# This is a comment
+block6
+A1
+B

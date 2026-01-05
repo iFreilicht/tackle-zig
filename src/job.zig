@@ -15,6 +15,8 @@ const PieceColor = tackle.enums.PieceColor;
 const Position = tackle.position.Position;
 const posFromInt = tackle.position.posFromInt;
 
+/// If the job is an official one, this is its official name.
+name: ?OfficialJobName,
 /// Width of the job in squares
 /// This and `height` define how `requirements` is interpreted.
 /// The maximum is 8, because that's the size of the court, and a job is only
@@ -29,6 +31,27 @@ height: u3,
 requirements: [max_job_size]JobRequirement,
 total_pieces: u4, // Maximum of 16 pieces, see also `max_pieces_per_player`
 rotation_count: RotationCount,
+
+/// All names of the official jobs
+pub const OfficialJobName = enum {
+    turm3,
+    treppe3,
+    turm4,
+    treppe4,
+    quadrat,
+    bluete,
+    turm5,
+    treppe5,
+    fuenf,
+    fisch,
+    turm6,
+    block6,
+    kreuz,
+    vogel,
+    block8,
+    brunnen,
+    block9,
+};
 
 /// Requirement that a square must fulfill for a job to be considered complete.
 pub const JobRequirement = enum {
@@ -53,6 +76,7 @@ pub const RotationCount = enum(u2) {
 };
 
 pub fn init(
+    name: ?OfficialJobName,
     width: u3,
     height: u3,
     requirements: []const JobRequirement,
@@ -97,6 +121,7 @@ pub fn init(
         .four;
 
     var job = Job{
+        .name = name,
         .width = width,
         .height = height,
         .requirements = .{.any} ** max_job_size,
@@ -138,13 +163,13 @@ fn isSymmetric180(width: u3, height: u3, requirements: []const JobRequirement) b
 
 // 3-piece jobs
 pub fn turm3() Job {
-    return init(1, 3, &.{
+    return init(.turm3, 1, 3, &.{
         .piece, .piece, .piece,
     }) catch unreachable;
 }
 
 pub fn treppe3() Job {
-    return init(3, 3, &.{
+    return init(.treppe3, 3, 3, &.{
         .any,   .any,   .piece,
         .any,   .piece, .any,
         .piece, .any,   .any,
@@ -153,13 +178,13 @@ pub fn treppe3() Job {
 
 // 4-piece jobs
 pub fn turm4() Job {
-    return init(1, 4, &.{
+    return init(.turm4, 1, 4, &.{
         .piece, .piece, .piece, .piece,
     }) catch unreachable;
 }
 
 pub fn treppe4() Job {
-    return init(4, 4, &.{
+    return init(.treppe4, 4, 4, &.{
         .any,   .any,   .any,   .piece,
         .any,   .any,   .piece, .any,
         .any,   .piece, .any,   .any,
@@ -168,13 +193,13 @@ pub fn treppe4() Job {
 }
 
 pub fn quadrat() Job {
-    return init(2, 2, &.{
+    return init(.quadrat, 2, 2, &.{
         .piece, .piece, .piece, .piece,
     }) catch unreachable;
 }
 
 pub fn bluete() Job {
-    return init(3, 3, &.{
+    return init(.bluete, 3, 3, &.{
         .any,   .piece, .any,
         .piece, .other, .piece,
         .any,   .piece, .any,
@@ -183,13 +208,13 @@ pub fn bluete() Job {
 
 // 5-piece jobs
 pub fn turm5() Job {
-    return init(1, 5, &.{
+    return init(.turm5, 1, 5, &.{
         .piece, .piece, .piece, .piece, .piece,
     }) catch unreachable;
 }
 
 pub fn treppe5() Job {
-    return init(5, 5, &.{
+    return init(.treppe5, 5, 5, &.{
         .any,   .any,   .any,   .any,   .piece,
         .any,   .any,   .any,   .piece, .any,
         .any,   .any,   .piece, .any,   .any,
@@ -199,7 +224,7 @@ pub fn treppe5() Job {
 }
 
 pub fn fuenf() Job {
-    return init(3, 3, &.{
+    return init(.fuenf, 3, 3, &.{
         .piece, .other, .piece,
         .other, .piece, .other,
         .piece, .other, .piece,
@@ -207,7 +232,7 @@ pub fn fuenf() Job {
 }
 
 pub fn fisch() Job {
-    return init(3, 3, &.{
+    return init(.fisch, 3, 3, &.{
         .any,   .piece, .piece,
         .any,   .piece, .piece,
         .piece, .any,   .any,
@@ -216,20 +241,20 @@ pub fn fisch() Job {
 
 // 6-piece jobs
 pub fn turm6() Job {
-    return init(1, 6, &.{
+    return init(.turm6, 1, 6, &.{
         .piece, .piece, .piece, .piece, .piece, .piece,
     }) catch unreachable;
 }
 
 pub fn block6() Job {
-    return init(3, 2, &.{
+    return init(.block6, 3, 2, &.{
         .piece, .piece, .piece,
         .piece, .piece, .piece,
     }) catch unreachable;
 }
 
 pub fn kreuz() Job {
-    return init(3, 4, &.{
+    return init(.kreuz, 3, 4, &.{
         .any,   .piece, .any,
         .piece, .piece, .piece,
         .any,   .piece, .any,
@@ -238,7 +263,7 @@ pub fn kreuz() Job {
 }
 
 pub fn vogel() Job {
-    return init(4, 4, &.{
+    return init(.vogel, 4, 4, &.{
         .any,   .any,   .any,   .piece,
         .any,   .piece, .piece, .any,
         .any,   .piece, .piece, .any,
@@ -248,14 +273,14 @@ pub fn vogel() Job {
 
 // 8-piece jobs
 pub fn block8() Job {
-    return init(4, 2, &.{
+    return init(.block8, 4, 2, &.{
         .piece, .piece, .piece, .piece,
         .piece, .piece, .piece, .piece,
     }) catch unreachable;
 }
 
 pub fn brunnen() Job {
-    return init(3, 3, &.{
+    return init(.brunnen, 3, 3, &.{
         .piece, .piece, .piece,
         .piece, .other, .piece,
         .piece, .piece, .piece,
@@ -264,11 +289,47 @@ pub fn brunnen() Job {
 
 // 9-piece jobs
 pub fn block9() Job {
-    return init(3, 3, &.{
+    return init(.block9, 3, 3, &.{
         .piece, .piece, .piece,
         .piece, .piece, .piece,
         .piece, .piece, .piece,
     }) catch unreachable;
+}
+
+pub const official_jobs = [_]Job{
+    turm3(),
+    treppe3(),
+    turm4(),
+    treppe4(),
+    quadrat(),
+    bluete(),
+    turm5(),
+    treppe5(),
+    fuenf(),
+    fisch(),
+    turm6(),
+    block6(),
+    kreuz(),
+    vogel(),
+    block8(),
+    brunnen(),
+    block9(),
+};
+
+/// Get a Job by its official name
+pub fn fromName(name: []const u8) !Job {
+    for (official_jobs) |job| {
+        if (std.mem.eql(u8, name, @tagName(job.name.?))) {
+            return job;
+        }
+    }
+    return error.UnknownJobName;
+}
+
+/// Get the number of pieces each player must place
+/// during the opening phase if this job is used.
+pub fn piecesPerPlayer(self: Job) u4 {
+    return self.total_pieces + 2;
 }
 
 pub fn isFulfilled(self: Job, board: Board, player: Player) bool {
@@ -518,4 +579,18 @@ test "isFulfilled detects kreuz job rotated 270 degrees" {
 
     const job = kreuz();
     try expectEqual(true, job.isFulfilled(board, .black));
+}
+
+test fromName {
+    try expectEqual(turm3(), try Job.fromName("turm3"));
+    try expectEqual(treppe5(), try Job.fromName("treppe5"));
+    try expectEqual(block9(), try Job.fromName("block9"));
+
+    try std.testing.expectError(error.UnknownJobName, Job.fromName("unknownjob"));
+}
+
+test piecesPerPlayer {
+    try expectEqual(@as(u4, 5), turm3().piecesPerPlayer());
+    try expectEqual(@as(u4, 7), treppe5().piecesPerPlayer());
+    try expectEqual(@as(u4, 11), block9().piecesPerPlayer());
 }

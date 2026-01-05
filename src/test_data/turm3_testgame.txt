@@ -1,0 +1,21 @@
+# This is a comment
+turm3
+A1
+B1
+# Another comment
+# this time accross multiple lines
+F10
+B10
+J5
+A8
+F1
+G10
+A4
+J8
+F5
+A4-B4
+J8-C8
+A1-D4
+B10-B8x
+F1-F4
+A8-B8xx

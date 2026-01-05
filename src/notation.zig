@@ -33,7 +33,7 @@ const CommentWinning = enum {
     win, // xx
 };
 
-const Turn = struct {
+pub const Turn = struct {
     by: Player,
     move: Move,
     winning: ?CommentWinning = null,
@@ -41,17 +41,42 @@ const Turn = struct {
     quality: ?CommentQuality = null,
 
     pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
+        const with_format_options = TurnWithFormatOptions{
+            .turn = self,
+        };
+        try with_format_options.format(writer);
+    }
+
+    pub fn withFormatOptions(self: @This(), format_options: FormatOptions) TurnWithFormatOptions {
+        return TurnWithFormatOptions{
+            .turn = self,
+            .format_options = format_options,
+        };
+    }
+};
+
+pub const FormatOptions = struct {
+    write_player_color: bool = true,
+};
+
+pub const TurnWithFormatOptions = struct {
+    turn: Turn,
+    format_options: FormatOptions = .{},
+
+    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
         // Write player color
-        _ = try writer.write(switch (self.by) {
-            .white => "w",
-            .black => "b",
-        });
+        if (self.format_options.write_player_color) {
+            _ = try writer.write(switch (self.turn.by) {
+                .white => "w",
+                .black => "b",
+            });
+        }
 
         // Write move
-        _ = try self.move.format(writer);
+        _ = try self.turn.move.format(writer);
 
         // Write comment for winning state
-        if (self.winning) |winning| {
+        if (self.turn.winning) |winning| {
             _ = try writer.write(switch (winning) {
                 .job_in_one => "x",
                 .win => "xx",
@@ -59,14 +84,14 @@ const Turn = struct {
         }
 
         // Write special action
-        if (self.special_action) |special_action| {
+        if (self.turn.special_action) |special_action| {
             _ = try writer.write(switch (special_action) {
                 .gold_removed => "(>)",
                 .worm => "(w)",
             });
         }
         // Write comment for quality
-        if (self.quality) |quality| {
+        if (self.turn.quality) |quality| {
             _ = try writer.write(switch (quality) {
                 .very_good => "(!!)",
                 .good => "(!)",

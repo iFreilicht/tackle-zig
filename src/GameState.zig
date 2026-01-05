@@ -55,14 +55,10 @@ pub fn currentPlayer(self: GameState) Player {
     return if (self.turn % 2 == 0) .white else .black;
 }
 
-pub fn piecesPerPlayer(self: GameState) u4 {
-    return self.job.total_pieces + 2;
-}
-
 fn endTurn(self: *GameState) void {
     switch (self.phase) {
         .opening => {
-            if (self.turn == self.piecesPerPlayer() * 2 - 1) {
+            if (self.turn == self.job.piecesPerPlayer() * 2 - 1) {
                 self.phase = .place_gold;
                 // Placing the gold piece is part of black's last turn during
                 // the opening, so DON'T increment the turn number here!

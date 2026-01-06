@@ -117,7 +117,7 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
         },
     };
 
-    try ui.render(state);
+    if (ui.render) |render| try render(state);
 
     if (datafile.job.name) |name| {
         std.debug.print("The job for this game is \"{t}\".\n", .{name});

@@ -16,7 +16,6 @@ pub fn simulatedUserInterface(placements: []const Position, moves: []const Move)
         pub const interface: UserInterface = .{
             .getNextPlacement = getNextPlacement,
             .getNextMove = getNextMove,
-            .render = render,
         };
 
         pub fn getNextPlacement() anyerror!Position {
@@ -36,8 +35,6 @@ pub fn simulatedUserInterface(placements: []const Position, moves: []const Move)
             moves_executed += 1;
             return next_move;
         }
-
-        pub fn render(_: GameState) !void {}
     };
     return ui.interface;
 }

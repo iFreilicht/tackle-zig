@@ -51,7 +51,7 @@ pub const UserInterface = struct {
     getNextMove: fn (state: GameState) anyerror!Move,
 
     /// Render the current game state.
-    render: fn (state: GameState) anyerror!void,
+    render: ?fn (state: GameState) anyerror!void = null,
 };
 
 /// Runs the main game loop, deferring to `ui` for input and output.
@@ -59,9 +59,11 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface) !GameState {
     var game_state = init_state;
 
     while (game_state.phase != .finished) {
-        ui.render(game_state) catch |err| {
-            std.debug.print("Error rendering game state: {}\n", .{err});
-        };
+        if (ui.render) |render| {
+            render(game_state) catch |err| {
+                std.debug.print("Error rendering game state: {}\n", .{err});
+            };
+        }
 
         if (game_state.phase == .opening or game_state.phase == .place_gold) {
             const placement = ui.getNextPlacement() catch |err| {
@@ -100,9 +102,11 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface) !GameState {
         };
     }
 
-    ui.render(game_state) catch |err| {
-        std.debug.print("Error rendering game state: {}\n", .{err});
-    };
+    if (ui.render) |render| {
+        render(game_state) catch |err| {
+            std.debug.print("Error rendering game state: {}\n", .{err});
+        };
+    }
 
     return game_state;
 }

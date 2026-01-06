@@ -32,10 +32,10 @@ const Turn = tackle.Turn;
 
 const comment_prefix = "# ";
 
-comments: Comments,
 job: Job,
-placements: ArrayList(Position),
-turns: ArrayList(Turn),
+comments: Comments = Comments.empty,
+placements: ArrayList(Position) = ArrayList(Position).empty,
+turns: ArrayList(Turn) = ArrayList(Turn).empty,
 
 const Comments = AutoHashMap(usize, ArrayList(u8));
 
@@ -155,8 +155,6 @@ pub fn save(self: DataFile, writer: *std.io.Writer) !void {
 pub fn toGameState(self: DataFile) !GameState {
     var game_state = GameState.init(self.job);
 
-    game_state.turn = self.placements.items.len + self.turns.items.len;
-
     for (self.placements.items) |placement| {
         try game_state.placeNextPiece(placement);
     }
@@ -242,5 +240,26 @@ test "no memory leaks when loading errors occur" {
     try expectError(
         error.EndOfStream,
         DataFile.load(allocator, &reader),
+    );
+}
+
+test "convert to GameState correctly" {
+    const allocator = std.testing.allocator;
+
+    const datafile = @embedFile("test_data/turm3_testgame.txt");
+    var reader = std.io.Reader.fixed(datafile);
+
+    var loaded_datafile = try DataFile.load(allocator, &reader);
+    defer loaded_datafile.deinit(allocator);
+
+    const game_state = try loaded_datafile.toGameState();
+
+    try expectEqual(15, game_state.turn);
+    try expectEqual(GameState.Phase.finished, game_state.phase);
+
+    try game_state.board.expectContent(
+        &.{ .{ .B, ._4 }, .{ .D, ._4 }, .{ .F, ._4 }, .{ .F, ._10 }, .{ .J, ._5 } },
+        &.{ .{ .B, ._1 }, .{ .B, ._8 }, .{ .C, ._8 }, .{ .D, ._8 }, .{ .G, ._10 } },
+        .{ .F, ._5 },
     );
 }

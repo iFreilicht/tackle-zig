@@ -205,7 +205,8 @@ fn moveManyPieces(self: *Board, start_positions: []const Position, direction: Di
 
     // Commit the changes to self.squares and update piece positions in lookup arrays
     self.squares = working_squares;
-    for (0..start_positions.len) |i| {
+    for (0..start_positions.len) |i_reverse| {
+        const i = start_positions.len - 1 - i_reverse;
         const pos = start_positions[i];
         const target_pos = movePosition(pos, direction, distance);
         self.updatePiecePosition(index(pos), index(target_pos));
@@ -772,6 +773,31 @@ test "move many pieces horizontal right" {
         board,
         &.{ .{ .D, ._5 }, .{ .E, ._5 } },
         &.{ .{ .G, ._5 }, .{ .H, ._5 } },
+        null,
+    );
+}
+
+test "move three black pieces horizontal right by one" {
+    // This is a regression test for a bug that corrupted the lookup arrays
+    // when moving multiple pieces by just one square.
+    var board: Board = .{};
+
+    try board.placePiece(.black, .{ .A, ._7 });
+    try board.placePiece(.black, .{ .B, ._7 });
+    try board.placePiece(.black, .{ .C, ._7 });
+
+    const start_positions = [_]Position{
+        .{ .A, ._7 },
+        .{ .B, ._7 },
+        .{ .C, ._7 },
+    };
+
+    try board.moveManyPieces(start_positions[0..3], .right, 1);
+
+    try expectContent(
+        board,
+        &.{},
+        &.{ .{ .B, ._7 }, .{ .C, ._7 }, .{ .D, ._7 } },
         null,
     );
 }

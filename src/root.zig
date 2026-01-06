@@ -11,6 +11,8 @@ pub const notation = @import("notation.zig");
 pub const position = @import("position.zig");
 pub const GameState = @import("GameState.zig");
 pub const TextRenderer = @import("TextRenderer.zig");
+pub const testing = @import("testing.zig");
+pub const text_ui = @import("text_ui.zig");
 
 pub const Position = position.Position;
 pub const Move = move.Move;
@@ -63,6 +65,12 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface) !GameState {
 
         if (game_state.phase == .opening or game_state.phase == .place_gold) {
             const placement = ui.getNextPlacement() catch |err| {
+                // When simulating games, we might run out of placements, even if the
+                // game is not finished yet. In that case, we just end the game.
+                if (err == error.NoMorePlacements) {
+                    std.debug.print("No more placements in simulation. Ending game.\n", .{});
+                    break;
+                }
                 std.debug.print("Error getting next placement: {}\n", .{err});
                 continue;
             };
@@ -99,36 +107,6 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface) !GameState {
     return game_state;
 }
 
-fn SimulatedUserInterface(placements: []const Position, moves: []const Move) type {
-    return struct {
-        var pieces_placed: usize = 0;
-        var moves_executed: usize = 0;
-
-        const interface: UserInterface = .{
-            .getNextPlacement = getNextPlacement,
-            .getNextMove = getNextMove,
-            .render = render,
-        };
-
-        pub fn getNextPlacement() anyerror!Position {
-            const next_placement = placements[pieces_placed];
-            pieces_placed += 1;
-            return next_placement;
-        }
-
-        pub fn getNextMove(_: GameState) !Move {
-            if (moves_executed >= moves.len) {
-                return error.NoMoreMoves;
-            }
-            const next_move = moves[moves_executed];
-            moves_executed += 1;
-            return next_move;
-        }
-
-        pub fn render(_: GameState) !void {}
-    };
-}
-
 test "game loop runs without errors" {
     const init_state = GameState.init(Job.turm3());
 
@@ -154,9 +132,9 @@ test "game loop runs without errors" {
         .{ .diagonal = .{ .from = .top_left, .distance = 4 } }, // White
     };
 
-    const mock_ui = SimulatedUserInterface(&placements, &moves);
+    const mock_ui = testing.simulatedUserInterface(&placements, &moves);
 
-    const final_state = try runGameLoop(init_state, mock_ui.interface);
+    const final_state = try runGameLoop(init_state, mock_ui);
 
     // This renders the final board state to stdout for visual feedback during testing.
     // It's not strictly necessary for the test itself, but I like it.

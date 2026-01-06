@@ -97,13 +97,10 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
         const file = try std.fs.cwd().openFile(filename, .{});
         defer file.close();
 
-        // Read the entire file into memory first
-        const contents = try file.readToEndAlloc(gpa, 1024 * 1024); // 1MB max
-        defer gpa.free(contents);
+        var read_buffer: [1024]u8 = undefined;
+        var reader = file.reader(&read_buffer);
 
-        var reader = std.io.Reader.fixed(contents);
-
-        const result = try DataFile.load(gpa, &reader);
+        const result = try DataFile.load(gpa, &reader.interface);
         break :df result;
     } else DataFile{ .job = args.job orelse Job.turm3() };
     defer datafile.deinit(gpa);

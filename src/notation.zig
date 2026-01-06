@@ -33,9 +33,26 @@ const CommentWinning = enum {
     win, // xx
 };
 
+/// An action taken by a player, either placing a piece or moving one.
+pub const Action = union(enum) {
+    place: Position,
+    move: Move,
+
+    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
+        switch (self) {
+            .place => |pos| {
+                _ = try writer.print("{f}{f}", .{ pos.@"0", pos.@"1" });
+            },
+            .move => |mv| {
+                try mv.format(writer);
+            },
+        }
+    }
+};
+
 pub const Turn = struct {
     by: Player,
-    move: Move,
+    action: Action,
     winning: ?CommentWinning = null,
     special_action: ?SpecialAction = null,
     quality: ?CommentQuality = null,
@@ -73,7 +90,7 @@ pub const TurnWithFormatOptions = struct {
         }
 
         // Write move
-        _ = try self.turn.move.format(writer);
+        _ = try self.turn.action.format(writer);
 
         // Write comment for winning state
         if (self.turn.winning) |winning| {
@@ -112,6 +129,7 @@ pub fn parsePosition(reader: *std.io.Reader) !Position {
 /// Parse a turn in the standard notation from the given reader.
 /// The `color` parameter can be used to substitute for the w/b prefix
 /// in the notation.
+/// TODO: Add ability to parse a placement instead of a move.
 pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
     const State = enum {
         start,
@@ -339,7 +357,7 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
     // After parsing, construct the Turn object
     return Turn{
         .by = by,
-        .move = move,
+        .action = .{ .move = move },
         .winning = winning,
         .special_action = special_action,
         .quality = quality,
@@ -349,12 +367,12 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
 test "format horizontal simple move" {
     const turn: Turn = .{
         .by = .black,
-        .move = .{ .horizontal = .{
+        .action = .{ .move = .{ .horizontal = .{
             .from_x = .F,
             .to_x = .C,
             .y = ._4,
             .block_height = .no_block,
-        } },
+        } } },
     };
 
     var buffer: [6]u8 = undefined;
@@ -366,12 +384,12 @@ test "format horizontal simple move" {
 test "format horizontal block move" {
     const turn: Turn = .{
         .by = .white,
-        .move = .{ .horizontal = .{
+        .action = .{ .move = .{ .horizontal = .{
             .from_x = .A,
             .to_x = .C,
             .y = ._5,
             .block_height = ._2,
-        } },
+        } } },
     };
 
     var buffer: [11]u8 = undefined;
@@ -383,12 +401,12 @@ test "format horizontal block move" {
 test "format vertical simple move" {
     const turn: Turn = .{
         .by = .black,
-        .move = .{ .vertical = .{
+        .action = .{ .move = .{ .vertical = .{
             .from_y = ._2,
             .to_y = ._5,
             .x = .G,
             .block_width = .no_block,
-        } },
+        } } },
     };
 
     var buffer: [6]u8 = undefined;
@@ -400,12 +418,12 @@ test "format vertical simple move" {
 test "format vertical block move" {
     const turn: Turn = .{
         .by = .white,
-        .move = .{ .vertical = .{
+        .action = .{ .move = .{ .vertical = .{
             .from_y = ._10,
             .to_y = ._1,
             .x = .D,
             .block_width = ._3,
-        } },
+        } } },
     };
 
     var buffer: [12]u8 = undefined;
@@ -417,10 +435,10 @@ test "format vertical block move" {
 test "format diagonal move 1" {
     const turn: Turn = .{
         .by = .black,
-        .move = .{ .diagonal = .{
+        .action = .{ .move = .{ .diagonal = .{
             .from = .bottom_left,
             .distance = 4,
-        } },
+        } } },
     };
 
     var buffer: [6]u8 = undefined;
@@ -468,12 +486,12 @@ test "format diagonal move 4" {
 test "format full move with comments" {
     const turn: Turn = .{
         .by = .black,
-        .move = .{ .vertical = .{
+        .action = .{ .move = .{ .vertical = .{
             .from_y = ._1,
             .to_y = ._10,
             .x = .E,
             .block_width = ._2,
-        } },
+        } } },
         .special_action = .gold_removed,
         .quality = .interesting,
         .winning = .job_in_one,
@@ -488,12 +506,12 @@ test "format full move with comments" {
 test "format move resulting in maximum string length" {
     const turn: Turn = .{
         .by = .white,
-        .move = .{ .horizontal = .{
+        .action = .{ .move = .{ .horizontal = .{
             .from_x = .D,
             .to_x = .J,
             .y = ._8,
             .block_height = ._3,
-        } },
+        } } },
         .special_action = .gold_removed,
         .quality = .very_good,
         .winning = .win,
@@ -516,12 +534,12 @@ test "parse horizontal simple move" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .black,
-        .move = .{ .horizontal = .{
+        .action = .{ .move = .{ .horizontal = .{
             .from_x = .H,
             .to_x = .B,
             .y = ._4,
             .block_height = .no_block,
-        } },
+        } } },
     };
 
     try std.testing.expectEqualDeep(expected, turn);
@@ -532,12 +550,12 @@ test "parse horizontal block move" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .white,
-        .move = .{ .horizontal = .{
+        .action = .{ .move = .{ .horizontal = .{
             .from_x = .D,
             .to_x = .G,
             .y = ._5,
             .block_height = ._2,
-        } },
+        } } },
     };
 
     try std.testing.expectEqualDeep(expected, turn);
@@ -548,12 +566,12 @@ test "parse vertical simple move" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .white,
-        .move = .{ .vertical = .{
+        .action = .{ .move = .{ .vertical = .{
             .from_y = ._2,
             .to_y = ._5,
             .x = .C,
             .block_width = .no_block,
-        } },
+        } } },
     };
 
     try std.testing.expectEqualDeep(expected, turn);
@@ -564,12 +582,12 @@ test "parse vertical block move" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .black,
-        .move = .{ .vertical = .{
+        .action = .{ .move = .{ .vertical = .{
             .from_y = ._10,
             .to_y = ._1,
             .x = .E,
             .block_width = ._2,
-        } },
+        } } },
     };
 
     try std.testing.expectEqualDeep(expected, turn);
@@ -580,10 +598,10 @@ test "parse diagonal move 1" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .white,
-        .move = .{ .diagonal = .{
+        .action = .{ .move = .{ .diagonal = .{
             .from = .bottom_left,
             .distance = 4,
-        } },
+        } } },
     };
 
     try std.testing.expectEqualDeep(expected, turn);
@@ -594,10 +612,10 @@ test "parse diagonal move 2" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .black,
-        .move = .{ .diagonal = .{
+        .action = .{ .move = .{ .diagonal = .{
             .from = .top_right,
             .distance = 3,
-        } },
+        } } },
     };
 
     try std.testing.expectEqualDeep(expected, turn);
@@ -608,10 +626,10 @@ test "parse diagonal move 3" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .white,
-        .move = .{ .diagonal = .{
+        .action = .{ .move = .{ .diagonal = .{
             .from = .top_left,
             .distance = 5,
-        } },
+        } } },
     };
 
     try std.testing.expectEqualDeep(expected, turn);
@@ -622,10 +640,10 @@ test "parse diagonal move 4" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .black,
-        .move = .{ .diagonal = .{
+        .action = .{ .move = .{ .diagonal = .{
             .from = .bottom_right,
             .distance = 9,
-        } },
+        } } },
     };
 
     try std.testing.expectEqualDeep(expected, turn);
@@ -636,12 +654,12 @@ test "parse full move with comments" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .black,
-        .move = .{ .vertical = .{
+        .action = .{ .move = .{ .vertical = .{
             .from_y = ._1,
             .to_y = ._10,
             .x = .E,
             .block_width = ._2,
-        } },
+        } } },
         .special_action = .gold_removed,
         .quality = .interesting,
         .winning = .job_in_one,
@@ -655,12 +673,12 @@ test "parse move only with quality comment" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .white,
-        .move = .{ .vertical = .{
+        .action = .{ .move = .{ .vertical = .{
             .from_y = ._1,
             .to_y = ._2,
             .x = .A,
             .block_width = .no_block,
-        } },
+        } } },
         .quality = .very_good,
     };
 
@@ -672,12 +690,12 @@ test "parse move only with special action comment" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .black,
-        .move = .{ .vertical = .{
+        .action = .{ .move = .{ .vertical = .{
             .from_y = ._10,
             .to_y = ._9,
             .x = .J,
             .block_width = .no_block,
-        } },
+        } } },
         .special_action = .gold_removed,
     };
 
@@ -689,12 +707,12 @@ test "parse move only with winning comment" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .white,
-        .move = .{ .vertical = .{
+        .action = .{ .move = .{ .vertical = .{
             .from_y = ._3,
             .to_y = ._4,
             .x = .C,
             .block_width = .no_block,
-        } },
+        } } },
         .winning = .job_in_one,
     };
 
@@ -706,12 +724,12 @@ test "parse move with maximum string length" {
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
         .by = .white,
-        .move = .{ .horizontal = .{
+        .action = .{ .move = .{ .horizontal = .{
             .from_x = .D,
             .to_x = .J,
             .y = ._8,
             .block_height = ._3,
-        } },
+        } } },
         .special_action = .gold_removed,
         .quality = .very_good,
         .winning = .win,

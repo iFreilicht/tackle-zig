@@ -34,6 +34,7 @@ const comment_prefix = "# ";
 
 job: Job,
 comments: Comments = Comments.empty,
+// TODO: unify into a single list once we can properly parse placement turns
 placements: ArrayList(Position) = ArrayList(Position).empty,
 turns: ArrayList(Turn) = ArrayList(Turn).empty,
 
@@ -41,7 +42,8 @@ const Comments = AutoHashMap(usize, ArrayList(u8));
 
 /// Load a DataFile from the given reader according to the format
 /// described in the module documentation.
-pub fn load(gpa: std.mem.Allocator, reader: *std.io.Reader) !DataFile {
+/// Returns `null` if the file is empty.
+pub fn load(gpa: std.mem.Allocator, reader: *std.io.Reader) !?DataFile {
     var comments = Comments.empty;
     errdefer {
         var comments_iter = comments.valueIterator();
@@ -92,6 +94,10 @@ pub fn load(gpa: std.mem.Allocator, reader: *std.io.Reader) !DataFile {
         }
 
         _ = try reader.discardDelimiterInclusive('\n');
+    }
+
+    if (comments.count() == 0 and job == null and placements.items.len == 0 and turns.items.len == 0) {
+        return null;
     }
 
     return DataFile{
@@ -159,7 +165,10 @@ pub fn toGameState(self: DataFile) !GameState {
         try game_state.placeNextPiece(placement);
     }
     for (self.turns.items) |turn| {
-        try game_state.executeMove(game_state.currentPlayer(), turn.move);
+        switch (turn.action) {
+            .place => |pos| try game_state.placeNextPiece(pos),
+            .move => |move| try game_state.executeMove(move),
+        }
     }
 
     return game_state;
@@ -171,7 +180,7 @@ test "load data file correctly" {
     const datafile = @embedFile("test_data/turm3_testgame.txt");
     var reader = std.io.Reader.fixed(datafile);
 
-    var loaded_datafile = try DataFile.load(allocator, &reader);
+    var loaded_datafile = try DataFile.load(allocator, &reader) orelse unreachable;
     defer loaded_datafile.deinit(allocator);
 
     try expectEqualDeep(Job.turm3(), loaded_datafile.job);
@@ -189,24 +198,24 @@ test "load data file correctly" {
         .{ .F, ._5 },
     }, loaded_datafile.placements.items);
     try expectEqualDeep(&[_]Turn{
-        .{ .by = .white, .move = .{
+        .{ .by = .white, .action = .{ .move = .{
             .horizontal = .{ .from_x = .A, .to_x = .B, .y = ._4 },
-        } },
-        .{ .by = .black, .move = .{
+        } } },
+        .{ .by = .black, .action = .{ .move = .{
             .horizontal = .{ .from_x = .J, .to_x = .C, .y = ._8 },
-        } },
-        .{ .by = .white, .move = .{
+        } } },
+        .{ .by = .white, .action = .{ .move = .{
             .diagonal = .{ .from = .bottom_left, .distance = 3 },
-        } },
-        .{ .by = .black, .move = .{
+        } } },
+        .{ .by = .black, .action = .{ .move = .{
             .vertical = .{ .x = .B, .from_y = ._10, .to_y = ._8 },
-        }, .winning = .job_in_one },
-        .{ .by = .white, .move = .{
+        } }, .winning = .job_in_one },
+        .{ .by = .white, .action = .{ .move = .{
             .vertical = .{ .x = .F, .from_y = ._1, .to_y = ._4 },
-        } },
-        .{ .by = .black, .move = .{
+        } } },
+        .{ .by = .black, .action = .{ .move = .{
             .horizontal = .{ .from_x = .A, .to_x = .B, .y = ._8 },
-        }, .winning = .win },
+        } }, .winning = .win },
     }, loaded_datafile.turns.items);
 
     try expectEqualDeep("This is a comment", loaded_datafile.comments.get(1).?.items);
@@ -220,7 +229,7 @@ test "load and save data file roundtrip" {
     const datafile = @embedFile("test_data/turm3_testgame.txt");
     var reader = std.io.Reader.fixed(datafile);
 
-    var loaded_datafile = try DataFile.load(allocator, &reader);
+    var loaded_datafile = try DataFile.load(allocator, &reader) orelse unreachable;
     defer loaded_datafile.deinit(allocator);
 
     var buffer: [1024]u8 = undefined;
@@ -249,7 +258,7 @@ test "convert to GameState correctly" {
     const datafile = @embedFile("test_data/turm3_testgame.txt");
     var reader = std.io.Reader.fixed(datafile);
 
-    var loaded_datafile = try DataFile.load(allocator, &reader);
+    var loaded_datafile = try DataFile.load(allocator, &reader) orelse unreachable;
     defer loaded_datafile.deinit(allocator);
 
     const game_state = try loaded_datafile.toGameState();

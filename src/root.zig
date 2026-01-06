@@ -33,7 +33,7 @@ pub fn placeDemoPieces(game_state: *GameState) !void {
 
     var reader = std.io.Reader.fixed(datafile_content);
 
-    const datafile = try DataFile.load(allocator, &reader);
+    const datafile = try DataFile.load(allocator, &reader) orelse unreachable;
 
     for (datafile.placements.items) |placement| {
         try game_state.placeNextPiece(placement);
@@ -50,12 +50,31 @@ pub const UserInterface = struct {
     /// Ask the user for the next move.
     getNextMove: fn (state: GameState) anyerror!Move,
 
+    /// Record a turn taken by a player, for example to a `DataFile`.
+    /// It is important that an implementation only records turns when this callback is called.
+    /// Recording turns in `getNextPlacement` or `getNextMove` would be premature, as the action
+    /// might not be valid according to the game rules and thus not actually taken.
+    record: ?fn (record_args: RecordArgs, turn: Turn) anyerror!void = null,
+
     /// Render the current game state.
     render: ?fn (state: GameState) anyerror!void = null,
 };
 
+pub const RecordArgs = struct {
+    /// The allocator to use for any dynamic memory allocations in the DataFile.
+    gpa: std.mem.Allocator,
+    /// Pointer to the DataFile to record turns into.
+    datafile_ptr: *DataFile,
+    /// Pointer to the open file the DataFile is being saved to.
+    file_ptr: *std.fs.File,
+};
+
 /// Runs the main game loop, deferring to `ui` for input and output.
-pub fn runGameLoop(init_state: GameState, ui: UserInterface) !GameState {
+pub fn runGameLoop(init_state: GameState, ui: UserInterface, record_args: ?RecordArgs) !GameState {
+    if (ui.record != null and record_args == null) {
+        return error.RecordArgsRequired;
+    }
+
     var game_state = init_state;
 
     while (game_state.phase != .finished) {
@@ -65,8 +84,10 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface) !GameState {
             };
         }
 
+        const player = game_state.currentPlayer();
+
         if (game_state.phase == .opening or game_state.phase == .place_gold) {
-            const placement = ui.getNextPlacement() catch |err| {
+            const pos = ui.getNextPlacement() catch |err| {
                 // When simulating games, we might run out of placements, even if the
                 // game is not finished yet. In that case, we just end the game.
                 if (err == error.NoMorePlacements) {
@@ -77,11 +98,19 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface) !GameState {
                 continue;
             };
 
-            const x, const y = placement;
-            game_state.placeNextPiece(placement) catch |err| {
+            const x, const y = pos;
+            game_state.placeNextPiece(pos) catch |err| {
                 std.debug.print("Error placing piece at '{f}{f}': {}\n", .{ x, y, err });
                 continue;
             };
+            if (ui.record) |record| {
+                record(
+                    record_args orelse unreachable,
+                    .{ .by = player, .action = .{ .place = pos } },
+                ) catch |err| {
+                    std.debug.print("Error recording placement action: {}\n", .{err});
+                };
+            }
             continue;
         }
 
@@ -96,10 +125,18 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface) !GameState {
             continue;
         };
 
-        game_state.executeMove(game_state.currentPlayer(), turn_move) catch |err| {
+        game_state.executeMove(turn_move) catch |err| {
             std.debug.print("Error executing move '{f}': {}\n", .{ turn_move, err });
             continue;
         };
+        if (ui.record) |record| {
+            record(
+                record_args orelse unreachable,
+                .{ .by = player, .action = .{ .move = turn_move } },
+            ) catch |err| {
+                std.debug.print("Error recording movement action: {}\n", .{err});
+            };
+        }
     }
 
     if (ui.render) |render| {
@@ -138,7 +175,7 @@ test "game loop runs without errors" {
 
     const mock_ui = testing.simulatedUserInterface(&placements, &moves);
 
-    const final_state = try runGameLoop(init_state, mock_ui);
+    const final_state = try runGameLoop(init_state, mock_ui, null);
 
     // This renders the final board state to stdout for visual feedback during testing.
     // It's not strictly necessary for the test itself, but I like it.

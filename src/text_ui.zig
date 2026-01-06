@@ -2,10 +2,13 @@ const tackle = @import("root.zig");
 
 const std = @import("std");
 
+const Turn = tackle.Turn;
+const DataFile = tackle.DataFile;
 const UserInterface = tackle.UserInterface;
 const GameState = tackle.GameState;
 const Position = tackle.Position;
 const Move = tackle.Move;
+const RecordArgs = tackle.RecordArgs;
 const renderBoard = tackle.TextRenderer.renderBoard;
 
 pub fn textBasedUI() UserInterface {
@@ -22,6 +25,7 @@ pub fn textBasedUI() UserInterface {
             .getNextPlacement = getNextPlacement,
             .getNextMove = getNextMove,
             .render = render,
+            .record = record,
         };
 
         fn getNextPlacement() !Position {
@@ -57,8 +61,33 @@ pub fn textBasedUI() UserInterface {
                     std.debug.print("Please enter a valid move:\n", .{});
                     continue;
                 };
-                return turn.move;
+                switch (turn.action) {
+                    .place => {
+                        std.debug.print("Expected a move, but got a placement. Please enter a valid move:\n", .{});
+                        continue;
+                    },
+                    .move => |move| return move,
+                }
             }
+        }
+
+        fn record(record_args: RecordArgs, turn: Turn) !void {
+            const datafile_ptr = record_args.datafile_ptr;
+            switch (turn.action) {
+                .place => |pos| {
+                    try datafile_ptr.placements.append(record_args.gpa, pos);
+                },
+                .move => {
+                    try datafile_ptr.turns.append(record_args.gpa, turn);
+                },
+            }
+
+            // Save the updated DataFile back to disk
+            try record_args.file_ptr.seekTo(0);
+            var write_buffer: [1024]u8 = undefined;
+            var datafile_writer = record_args.file_ptr.writer(&write_buffer);
+            try datafile_ptr.save(&datafile_writer.interface);
+            try datafile_writer.interface.flush();
         }
 
         fn render(state: GameState) !void {

@@ -16,7 +16,11 @@ const Mode = enum {
     play,
     load,
     show,
+    discard,
+    save,
 };
+
+const autosave_filename = ".tackle-autosave.txt";
 
 const Args = struct {
     mode: Mode,
@@ -25,10 +29,12 @@ const Args = struct {
     verbose: bool,
 
     const usage =
-        \\Usage: tackle [job]
-        \\       tackle play [job]          Play a new game with [job]
+        \\Usage: tackle [file] [job]
+        \\       tackle play [file] [job]   Play a new game with [job], saving to [file] if passed
         \\       tackle load [file]         Continue a saved game
         \\       tackle show [file]         Display a saved game and exit
+        \\       tackle discard             Discard the current autosave
+        \\       tackle save [file]         Save the autosaved game to [file]
         \\
     ;
 
@@ -52,6 +58,10 @@ const Args = struct {
                 mode = .load;
             } else if (std.mem.eql(u8, arg, "show")) {
                 mode = .show;
+            } else if (std.mem.eql(u8, arg, "discard")) {
+                mode = .discard;
+            } else if (std.mem.eql(u8, arg, "save")) {
+                mode = .save;
             } else {
                 if (mode == .play) parse_job: {
                     job = Job.fromName(arg) catch {
@@ -72,6 +82,13 @@ const Args = struct {
     }
 };
 
+fn print_job_names() void {
+    std.debug.print("Available jobs:\n", .{});
+    for (Job.official_jobs) |job| {
+        std.debug.print(" - {t}\n", .{job.name.?});
+    }
+}
+
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
     const argv = try std.process.argsAlloc(allocator);
@@ -82,6 +99,7 @@ pub fn main() !void {
     mainArgs(allocator, parsed_args, textBasedUI()) catch |err| {
         if (err == error.InvalidArguments) {
             std.debug.print("{s}\n", .{Args.usage});
+            print_job_names();
         } else {
             std.debug.print("Error: {}\n", .{err});
         }
@@ -93,33 +111,75 @@ pub fn main() !void {
 }
 
 pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
-    var datafile = if (args.filepath) |filename| df: {
-        const file = try std.fs.cwd().openFile(filename, .{});
-        defer file.close();
+    if (args.mode == .discard) {
+        try std.fs.cwd().deleteFile(autosave_filename);
+        std.debug.print("Autosave file \"{s}\" discarded.\n", .{autosave_filename});
+        return;
+    }
 
-        var read_buffer: [1024]u8 = undefined;
-        var reader = file.reader(&read_buffer);
+    const filename = args.filepath orelse autosave_filename;
 
-        const result = try DataFile.load(gpa, &reader.interface);
-        break :df result;
-    } else DataFile{ .job = args.job orelse Job.turm3() };
-    defer datafile.deinit(gpa);
+    if (args.mode == .save) {
+        try std.fs.cwd().rename(autosave_filename, filename);
+        std.debug.print(
+            "Autosave file \"{s}\" renamed to \"{s}\".\n",
+            .{ autosave_filename, filename },
+        );
+        return;
+    }
 
-    const state = state: switch (args.mode) {
-        .show, .load => try datafile.toGameState(),
-        .play => {
-            if (datafile.placements.items.len == 0 and datafile.turns.items.len == 0) {
-                break :state GameState.init(datafile.job);
+    // Open or create the file
+    var file = try std.fs.cwd().createFile(
+        filename,
+        .{ .truncate = false, .read = true, .exclusive = false },
+    );
+    defer file.close();
+
+    var read_buffer: [1024]u8 = undefined;
+    var reader = file.reader(&read_buffer);
+
+    var datafile = try DataFile.load(gpa, &reader.interface);
+    if (datafile == null) {
+        if (args.mode == .load or args.mode == .show) {
+            std.debug.print("No saved game found at \"{s}\".\n", .{filename});
+            return error.NoSavedGameFound;
+        }
+        if (args.job == null) {
+            std.debug.print("No job specified for new game.\n", .{});
+            print_job_names();
+            return error.JobRequiredForNewGame;
+        }
+        datafile = DataFile{ .job = args.job orelse Job.turm3() };
+    } else {
+        if (args.mode == .play) {
+            if (std.mem.eql(u8, filename, autosave_filename)) {
+                std.debug.print(
+                    \\There is an existing autosave at "{s}".
+                    \\If you want to continue the saved game, run "load" instead.
+                    \\If you want to start a new game, either run "save" to save the existing
+                    \\game to a new file, or delete the autosave with "discard" before 
+                    \\running "play" again.
+                    \\
+                , .{filename});
+                return error.SavedGameAlreadyExists;
             } else {
-                std.debug.print("File contains a saved game. Please use \"load\" to load it.\n", .{});
-                return error.FileContainsSavedGame;
+                std.debug.print(
+                    \\There is already a saved game at "{s}".
+                    \\If you want to continue the saved game, run "load" instead.
+                    \\If you want to start a new game, either choose a different filename or
+                    \\delete the existing file with "discard" before running "play" again.
+                , .{filename});
+                return error.SavedGameAlreadyExists;
             }
-        },
-    };
+        }
+    }
+    defer datafile.?.deinit(gpa);
+
+    const state = try datafile.?.toGameState();
 
     if (ui.render) |render| try render(state);
 
-    if (datafile.job.name) |name| {
+    if (datafile.?.job.name) |name| {
         std.debug.print("The job for this game is \"{t}\".\n", .{name});
     } else {
         std.debug.print("The job for this game is a custom job, which the CLI currently can't display.\n", .{});
@@ -127,7 +187,15 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
 
     if (args.mode == .show) return;
 
-    _ = try tackle.runGameLoop(state, ui);
+    _ = try tackle.runGameLoop(
+        state,
+        ui,
+        .{
+            .gpa = gpa,
+            .datafile_ptr = &datafile.?,
+            .file_ptr = &file,
+        },
+    );
 }
 
 test {
@@ -150,6 +218,14 @@ test "mainArgs loads entire game and exits without errors when the game is alrea
 
 test "mainArgs starts a new game and exits without errors when no user input is given" {
     const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // Change to the temporary directory so the autosave file can be
+    // created without interfering with any existing files.
+    try tmp_dir.dir.setAsCwd();
+
     const args = Args{
         .mode = .play,
         .job = Job.turm3(),
@@ -161,6 +237,8 @@ test "mainArgs starts a new game and exits without errors when no user input is 
 
     try mainArgs(allocator, args, ui);
 }
+
+// TODO: Add tests for the other modes!
 
 test "simple test" {
     const gpa = std.testing.allocator;

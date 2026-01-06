@@ -93,19 +93,17 @@ pub fn placeNextPiece(self: *GameState, at: Position) !void {
         .place_gold => {
             try self.board.executePlacement(.gold, at);
         },
-        .main => return error.InvalidPhase,
-        .finished => return error.InvalidPhase,
+        .main, .finished => return error.InvalidPhase,
     }
 
     self.endTurn();
 }
 
 /// Execute a move for the specified player, checking for turn order and phase validity.
-pub fn executeMove(self: *GameState, player: Player, move: Move) !void {
-    if (player != self.currentPlayer()) return error.NotYourTurn;
+pub fn executeMove(self: *GameState, move: Move) !void {
     if (self.phase != .main) return error.InvalidPhase;
 
-    try self.board.executeMove(player, move);
+    try self.board.executeMove(self.currentPlayer(), move);
 
     self.endTurn();
 }

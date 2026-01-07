@@ -15,7 +15,11 @@ pub fn simulatedUserInterface(placements: []const Position, moves: []const Move)
         var pieces_placed: usize = 0;
         var moves_executed: usize = 0;
 
+        var write_buffer: [64]u8 = undefined;
+        var writer = std.io.Writer.Discarding.init(&write_buffer);
+
         pub const interface: UserInterface = .{
+            .log_writer = &writer.writer,
             .getNextPlacement = getNextPlacement,
             .getNextMove = getNextMove,
         };
@@ -49,6 +53,7 @@ pub fn simulatedUserInterfaceWithRecording(placements: []const Position, moves: 
             .getNextPlacement = base_ui.getNextPlacement,
             .getNextMove = base_ui.getNextMove,
             .record = record,
+            .log_writer = base_ui.log_writer,
         };
 
         fn record(record_args: RecordArgs, turn: Turn) !void {

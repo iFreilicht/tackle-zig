@@ -22,6 +22,7 @@ pub fn textBasedUI() UserInterface {
         var writer = stdout.writer(&output_buffer);
 
         const interface: UserInterface = .{
+            .log_writer = &writer.interface,
             .getNextPlacement = getNextPlacement,
             .getNextMove = getNextMove,
             .render = render,

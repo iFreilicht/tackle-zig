@@ -1,6 +1,7 @@
 const Job = @This();
 const std = @import("std");
 
+const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 
 const tackle = @import("root.zig");
@@ -52,6 +53,13 @@ pub const OfficialJobName = enum {
     brunnen,
     block9,
 };
+
+pub fn show_official_job_names(writer: *std.io.Writer) !void {
+    try writer.print("Official jobs:\n", .{});
+    for (Job.official_jobs) |job| {
+        try writer.print(" - {t}\n", .{job.name.?});
+    }
+}
 
 /// Requirement that a square must fulfill for a job to be considered complete.
 pub const JobRequirement = enum {
@@ -422,6 +430,23 @@ test "all official jobs initialize without error" {
     _ = block8();
     _ = brunnen();
     _ = block9();
+}
+
+test "all official jobs are displayed by show_official_job_names" {
+    var buffer: [1024]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+
+    try show_official_job_names(&writer);
+
+    for (official_jobs) |job| {
+        const job_name = @tagName(job.name.?);
+        try expect(std.mem.containsAtLeast(
+            u8,
+            buffer[0..writer.end],
+            1,
+            job_name,
+        ));
+    }
 }
 
 test "isFulfilled detects turm3 in lower left corner" {

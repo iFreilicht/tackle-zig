@@ -44,6 +44,9 @@ pub fn placeDemoPieces(game_state: *GameState) !void {
 /// Functions are currently forced to be known at compile time,
 /// but we may want to use function pointers in the future for more flexibility.
 pub const UserInterface = struct {
+    /// Writer to write log messages to
+    log_writer: *std.io.Writer,
+
     /// Ask the user where the next piece should be placed.
     getNextPlacement: fn () anyerror!Position,
 
@@ -80,7 +83,7 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface, record_args: ?Recor
     while (game_state.phase != .finished) {
         if (ui.render) |render| {
             render(game_state) catch |err| {
-                std.debug.print("Error rendering game state: {}\n", .{err});
+                try ui.log_writer.print("Error rendering game state: {}\n", .{err});
             };
         }
 
@@ -91,16 +94,16 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface, record_args: ?Recor
                 // When simulating games, we might run out of placements, even if the
                 // game is not finished yet. In that case, we just end the game.
                 if (err == error.NoMorePlacements) {
-                    std.debug.print("No more placements in simulation. Ending game.\n", .{});
+                    try ui.log_writer.print("No more placements in simulation. Ending game.\n", .{});
                     break;
                 }
-                std.debug.print("Error getting next placement: {}\n", .{err});
+                try ui.log_writer.print("Error getting next placement: {}\n", .{err});
                 continue;
             };
 
             const x, const y = pos;
             game_state.placeNextPiece(pos) catch |err| {
-                std.debug.print("Error placing piece at '{f}{f}': {}\n", .{ x, y, err });
+                try ui.log_writer.print("Error placing piece at '{f}{f}': {}\n", .{ x, y, err });
                 continue;
             };
             if (ui.record) |record| {
@@ -108,7 +111,7 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface, record_args: ?Recor
                     record_args orelse unreachable,
                     .{ .by = player, .action = .{ .place = pos } },
                 ) catch |err| {
-                    std.debug.print("Error recording placement action: {}\n", .{err});
+                    try ui.log_writer.print("Error recording placement action: {}\n", .{err});
                 };
             }
             continue;
@@ -118,15 +121,15 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface, record_args: ?Recor
             // When simulating games, we might run out of moves, even if the
             // game is not finished yet. In that case, we just end the game.
             if (err == error.NoMoreMoves) {
-                std.debug.print("No more moves in simulation. Ending game.\n", .{});
+                try ui.log_writer.print("No more moves in simulation. Ending game.\n", .{});
                 break;
             }
-            std.debug.print("Error getting next move: {}\n", .{err});
+            try ui.log_writer.print("Error getting next move: {}\n", .{err});
             continue;
         };
 
         game_state.executeMove(turn_move) catch |err| {
-            std.debug.print("Error executing move '{f}': {}\n", .{ turn_move, err });
+            try ui.log_writer.print("Error executing move '{f}': {}\n", .{ turn_move, err });
             continue;
         };
         if (ui.record) |record| {
@@ -134,14 +137,14 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface, record_args: ?Recor
                 record_args orelse unreachable,
                 .{ .by = player, .action = .{ .move = turn_move } },
             ) catch |err| {
-                std.debug.print("Error recording movement action: {}\n", .{err});
+                try ui.log_writer.print("Error recording movement action: {}\n", .{err});
             };
         }
     }
 
     if (ui.render) |render| {
         render(game_state) catch |err| {
-            std.debug.print("Error rendering game state: {}\n", .{err});
+            try ui.log_writer.print("Error rendering game state: {}\n", .{err});
         };
     }
 

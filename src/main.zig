@@ -88,26 +88,20 @@ const Args = struct {
     }
 };
 
-fn print_job_names() void {
-    std.debug.print("Available jobs:\n", .{});
-    for (Job.official_jobs) |job| {
-        std.debug.print(" - {t}\n", .{job.name.?});
-    }
-}
-
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
     const argv = try std.process.argsAlloc(allocator);
     defer allocator.free(argv);
 
     const parsed_args = try Args.parse(argv);
+    const ui = textBasedUI();
 
-    mainArgs(allocator, parsed_args, textBasedUI()) catch |err| {
+    mainArgs(allocator, parsed_args, ui) catch |err| {
         if (err == error.InvalidArguments) {
-            std.debug.print("{s}\n", .{Args.usage});
-            print_job_names();
+            try ui.log_writer.print("{s}\n", .{Args.usage});
+            try Job.show_official_job_names(ui.log_writer);
         } else {
-            std.debug.print("Error: {}\n", .{err});
+            try ui.log_writer.print("Error: {}\n", .{err});
         }
         // Print traceback
         if (parsed_args.verbose) {
@@ -119,7 +113,7 @@ pub fn main() !void {
 pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
     if (args.mode == .discard) {
         try args.working_dir.deleteFile(autosave_filename);
-        std.debug.print("Autosave file \"{s}\" discarded.\n", .{autosave_filename});
+        try ui.log_writer.print("Autosave file \"{s}\" discarded.\n", .{autosave_filename});
         return;
     }
 
@@ -127,7 +121,7 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
 
     if (args.mode == .save) {
         try args.working_dir.rename(autosave_filename, filename);
-        std.debug.print(
+        try ui.log_writer.print(
             "Autosave file \"{s}\" renamed to \"{s}\".\n",
             .{ autosave_filename, filename },
         );
@@ -148,19 +142,19 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
     defer if (datafile != null) datafile.?.deinit(gpa);
     if (datafile == null) {
         if (args.mode == .load or args.mode == .show) {
-            std.debug.print("No saved game found at \"{s}\".\n", .{filename});
+            try ui.log_writer.print("No saved game found at \"{s}\".\n", .{filename});
             return error.NoSavedGameFound;
         }
         if (args.job == null) {
-            std.debug.print("No job specified for new game.\n", .{});
-            print_job_names();
+            try ui.log_writer.print("No job specified for new game.\n", .{});
+            try Job.show_official_job_names(ui.log_writer);
             return error.JobRequiredForNewGame;
         }
         datafile = DataFile{ .job = args.job orelse Job.turm3() };
     } else {
         if (args.mode == .play) {
             if (std.mem.eql(u8, filename, autosave_filename)) {
-                std.debug.print(
+                try ui.log_writer.print(
                     \\There is an existing autosave at "{s}".
                     \\If you want to continue the saved game, run "load" instead.
                     \\If you want to start a new game, either run "save" to save the existing
@@ -170,7 +164,7 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
                 , .{filename});
                 return error.SavedGameAlreadyExists;
             } else {
-                std.debug.print(
+                try ui.log_writer.print(
                     \\There is already a saved game at "{s}".
                     \\If you want to continue the saved game, run "load" instead.
                     \\If you want to start a new game, either choose a different filename or
@@ -186,9 +180,9 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
     if (ui.render) |render| try render(state);
 
     if (datafile.?.job.name) |name| {
-        std.debug.print("The job for this game is \"{t}\".\n", .{name});
+        try ui.log_writer.print("The job for this game is \"{t}\".\n", .{name});
     } else {
-        std.debug.print("The job for this game is a custom job, which the CLI currently can't display.\n", .{});
+        try ui.log_writer.print("The job for this game is a custom job, which the CLI currently can't display.\n", .{});
     }
 
     if (args.mode == .show) return;

@@ -9,6 +9,7 @@ const Position = tackle.Position;
 const UserInterface = tackle.UserInterface;
 const textBasedUI = tackle.text_ui.textBasedUI;
 const simulatedUserInterface = tackle.testing.simulatedUserInterface;
+const simulatedUserInterfaceWithRecording = tackle.testing.simulatedUserInterfaceWithRecording;
 
 const renderBoard = tackle.TextRenderer.renderBoard;
 
@@ -27,6 +28,10 @@ const Args = struct {
     job: ?tackle.Job,
     filepath: ?[]const u8,
     verbose: bool,
+
+    /// The working directory to use for file operations.
+    /// Is set to the current directory by default and only overridden in tests.
+    working_dir: std.fs.Dir,
 
     const usage =
         \\Usage: tackle [file] [job]
@@ -78,6 +83,7 @@ const Args = struct {
             .job = job,
             .filepath = file,
             .verbose = verbose,
+            .working_dir = std.fs.cwd(),
         };
     }
 };
@@ -112,7 +118,7 @@ pub fn main() !void {
 
 pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
     if (args.mode == .discard) {
-        try std.fs.cwd().deleteFile(autosave_filename);
+        try args.working_dir.deleteFile(autosave_filename);
         std.debug.print("Autosave file \"{s}\" discarded.\n", .{autosave_filename});
         return;
     }
@@ -120,7 +126,7 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
     const filename = args.filepath orelse autosave_filename;
 
     if (args.mode == .save) {
-        try std.fs.cwd().rename(autosave_filename, filename);
+        try args.working_dir.rename(autosave_filename, filename);
         std.debug.print(
             "Autosave file \"{s}\" renamed to \"{s}\".\n",
             .{ autosave_filename, filename },
@@ -129,7 +135,7 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
     }
 
     // Open or create the file
-    var file = try std.fs.cwd().createFile(
+    var file = try args.working_dir.createFile(
         filename,
         .{ .truncate = false, .read = true, .exclusive = false },
     );
@@ -139,6 +145,7 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
     var reader = file.reader(&read_buffer);
 
     var datafile = try DataFile.load(gpa, &reader.interface);
+    defer if (datafile != null) datafile.?.deinit(gpa);
     if (datafile == null) {
         if (args.mode == .load or args.mode == .show) {
             std.debug.print("No saved game found at \"{s}\".\n", .{filename});
@@ -173,7 +180,6 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
             }
         }
     }
-    defer datafile.?.deinit(gpa);
 
     const state = try datafile.?.toGameState();
 
@@ -209,6 +215,7 @@ test "mainArgs loads entire game and exits without errors when the game is alrea
         .job = Job.turm3(),
         .filepath = "src/test_data/turm3_testgame.txt",
         .verbose = false,
+        .working_dir = std.fs.cwd(),
     };
 
     const ui = simulatedUserInterface(&.{}, &.{});
@@ -222,15 +229,12 @@ test "mainArgs starts a new game and exits without errors when no user input is 
     var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
-    // Change to the temporary directory so the autosave file can be
-    // created without interfering with any existing files.
-    try tmp_dir.dir.setAsCwd();
-
     const args = Args{
         .mode = .play,
         .job = Job.turm3(),
         .filepath = null,
         .verbose = false,
+        .working_dir = tmp_dir.dir,
     };
 
     const ui = simulatedUserInterface(&.{}, &.{});
@@ -238,7 +242,52 @@ test "mainArgs starts a new game and exits without errors when no user input is 
     try mainArgs(allocator, args, ui);
 }
 
-// TODO: Add tests for the other modes!
+test "play -> play fails -> save -> play works" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    var args = Args{
+        .mode = .play,
+        .job = Job.treppe4(),
+        .filepath = null,
+        .verbose = false,
+        .working_dir = tmp_dir.dir,
+    };
+
+    const ui = simulatedUserInterfaceWithRecording(
+        &.{.{ .A, ._5 }},
+        &.{},
+    );
+
+    // First play creates the autosave
+    try mainArgs(allocator, args, ui);
+
+    // Second play fails because the autosave already exists
+    try std.testing.expectError(
+        error.SavedGameAlreadyExists,
+        mainArgs(allocator, args, ui),
+    );
+
+    // Save the autosave to a new file
+    args.mode = .save;
+    args.filepath = "saved_game.txt";
+    try mainArgs(allocator, args, ui);
+
+    // Now play with the original autosave filename should work again
+    args.mode = .play;
+    args.filepath = null;
+    try mainArgs(allocator, args, ui);
+
+    // Discard the autosave to clean up
+    args.mode = .discard;
+    try mainArgs(allocator, args, ui);
+
+    // Now play with the original autosave filename should work as well
+    args.mode = .play;
+    try mainArgs(allocator, args, ui);
+}
 
 test "simple test" {
     const gpa = std.testing.allocator;

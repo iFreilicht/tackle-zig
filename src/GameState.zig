@@ -19,6 +19,7 @@ const ColumnX = tackle.position.ColumnX;
 const RowY = tackle.position.RowY;
 const Position = tackle.position.Position;
 const Move = tackle.Move;
+const Turn = tackle.Turn;
 const BlockSize = tackle.position.BlockSize;
 const Direction = tackle.enums.Direction;
 const movePosition = tackle.position.movePosition;
@@ -55,6 +56,14 @@ pub fn currentPlayer(self: GameState) Player {
     return if (self.turn % 2 == 0) .white else .black;
 }
 
+/// Which color the next placed/moved piece must have
+pub fn currentColor(self: GameState) PieceColor {
+    return switch (self.currentPlayer()) {
+        .white => .white,
+        .black => if (self.phase == .place_gold) .gold else .black,
+    };
+}
+
 fn endTurn(self: *GameState) void {
     switch (self.phase) {
         .opening => {
@@ -82,6 +91,16 @@ fn endTurn(self: *GameState) void {
     }
 }
 
+/// Execute a turn, checking for the correct turn order and phase.
+pub fn executeTurn(self: *GameState, turn: Turn) !void {
+    if (turn.color != self.currentColor()) return error.NotCurrentColorTurn;
+
+    switch (turn.action) {
+        .place => |pos| try self.placeNextPiece(pos),
+        .move => |move| try self.executeMove(move),
+    }
+}
+
 /// Place a piece for the current player and end their turn,
 /// checking for game rules.
 pub fn placeNextPiece(self: *GameState, at: Position) !void {
@@ -99,7 +118,7 @@ pub fn placeNextPiece(self: *GameState, at: Position) !void {
     self.endTurn();
 }
 
-/// Execute a move for the specified player, checking for turn order and phase validity.
+/// Execute a move, checking for game rules and correct phase.
 pub fn executeMove(self: *GameState, move: Move) !void {
     if (self.phase != .main) return error.InvalidPhase;
 

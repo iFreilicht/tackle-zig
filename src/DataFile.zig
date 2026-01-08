@@ -4,11 +4,8 @@
 //! Comments start with `# ` and go on for the entire line.
 //! The first non-comment line MUST contain the name of the job. Custom jobs
 //! are currently not supported.
-//! After the job, the parser knows how many placements to expect, so
-//! all subsequent lines will be treated as positions.
-//! The positions need to be in the format accepted by `tackle.notation.parsePosition`.
-//! After all placements have been read, all subsequent lines will be treated
-//! as turns, in the format accepted by `tackle.notation.parseTurn` when the player is known.
+//! After the job, all subsequent lines will be treated as turns, in the
+//! format accepted by `tackle.notation.parseTurn`.
 //! Empty lines are ignored. Whitespace at the end of lines is ignored.
 
 const DataFile = @This();
@@ -34,8 +31,6 @@ const comment_prefix = "# ";
 
 job: Job,
 comments: Comments = Comments.empty,
-// TODO: unify into a single list once we can properly parse placement turns
-placements: ArrayList(Position) = ArrayList(Position).empty,
 turns: ArrayList(Turn) = ArrayList(Turn).empty,
 
 const Comments = AutoHashMap(usize, ArrayList(u8));
@@ -53,8 +48,6 @@ pub fn load(gpa: std.mem.Allocator, reader: *std.io.Reader) !?DataFile {
         comments.deinit(gpa);
     }
     var job: ?Job = null;
-    var placements = ArrayList(Position).empty;
-    errdefer placements.deinit(gpa);
     var turns = ArrayList(Turn).empty;
     errdefer turns.deinit(gpa);
 
@@ -82,28 +75,22 @@ pub fn load(gpa: std.mem.Allocator, reader: *std.io.Reader) !?DataFile {
         } else if (job == null) {
             // Job line
             job = try Job.fromName(line);
-        } else if (placements.items.len < @as(usize, job.?.piecesPerPlayer()) * 2 + 1) {
-            // Placement line
-            const placement_pos = try notation.parsePosition(&line_reader);
-            try placements.append(gpa, placement_pos);
         } else {
-            // Move line
-            const player: Player = if (turns.items.len % 2 == 0) .white else .black;
-            const turn = try notation.parseTurn(&line_reader, player);
+            // Turn line
+            const turn = try notation.parseTurn(&line_reader, null);
             try turns.append(gpa, turn);
         }
 
         _ = try reader.discardDelimiterInclusive('\n');
     }
 
-    if (comments.count() == 0 and job == null and placements.items.len == 0 and turns.items.len == 0) {
+    if (comments.count() == 0 and job == null and turns.items.len == 0) {
         return null;
     }
 
     return DataFile{
         .comments = comments,
         .job = job orelse return error.DataFileContainsNoJob,
-        .placements = placements,
         .turns = turns,
     };
 }
@@ -114,7 +101,6 @@ pub fn deinit(self: *DataFile, gpa: std.mem.Allocator) void {
         entry.value_ptr.deinit(gpa);
     }
     self.comments.deinit(gpa);
-    self.placements.deinit(gpa);
     self.turns.deinit(gpa);
 }
 
@@ -123,7 +109,6 @@ pub fn deinit(self: *DataFile, gpa: std.mem.Allocator) void {
 pub fn save(self: DataFile, writer: *std.io.Writer) !void {
     var line_number: usize = 1;
     var job_written = false;
-    var placements_written: usize = 0;
     var turns_written: usize = 0;
 
     while (true) : (line_number += 1) {
@@ -140,17 +125,10 @@ pub fn save(self: DataFile, writer: *std.io.Writer) !void {
             } else {
                 return error.CannotSaveCustomJobYet;
             }
-        } else if (placements_written < self.placements.items.len) {
-            // Placement line
-            const position = self.placements.items[placements_written];
-            try writer.print("{f}{f}\n", position);
-            placements_written += 1;
         } else if (turns_written < self.turns.items.len) {
             // Turn line
             const turn = self.turns.items[turns_written];
-            try writer.print("{f}\n", .{
-                turn.withFormatOptions(.{ .write_player_color = false }),
-            });
+            try writer.print("{f}\n", .{turn});
             turns_written += 1;
         } else {
             break;
@@ -158,17 +136,13 @@ pub fn save(self: DataFile, writer: *std.io.Writer) !void {
     }
 }
 
+/// Play back the DataFile into an empty GameState initialized with the DataFile's job.
+/// This will validate whether the actions in the DataFile are legal according to the game rules.
 pub fn toGameState(self: DataFile) !GameState {
     var game_state = GameState.init(self.job);
 
-    for (self.placements.items) |placement| {
-        try game_state.placeNextPiece(placement);
-    }
     for (self.turns.items) |turn| {
-        switch (turn.action) {
-            .place => |pos| try game_state.placeNextPiece(pos),
-            .move => |move| try game_state.executeMove(move),
-        }
+        try game_state.executeTurn(turn);
     }
 
     return game_state;
@@ -184,36 +158,34 @@ test "load data file correctly" {
     defer loaded_datafile.deinit(allocator);
 
     try expectEqualDeep(Job.turm3(), loaded_datafile.job);
-    try expectEqualDeep(&[_]Position{
-        .{ .A, ._1 },
-        .{ .B, ._1 },
-        .{ .F, ._10 },
-        .{ .B, ._10 },
-        .{ .J, ._5 },
-        .{ .A, ._8 },
-        .{ .F, ._1 },
-        .{ .G, ._10 },
-        .{ .A, ._4 },
-        .{ .J, ._8 },
-        .{ .F, ._5 },
-    }, loaded_datafile.placements.items);
     try expectEqualDeep(&[_]Turn{
-        .{ .by = .white, .action = .{ .move = .{
+        .{ .color = .white, .action = .{ .place = .{ .A, ._1 } } },
+        .{ .color = .black, .action = .{ .place = .{ .B, ._1 } } },
+        .{ .color = .white, .action = .{ .place = .{ .F, ._10 } } },
+        .{ .color = .black, .action = .{ .place = .{ .B, ._10 } } },
+        .{ .color = .white, .action = .{ .place = .{ .J, ._5 } } },
+        .{ .color = .black, .action = .{ .place = .{ .A, ._8 } } },
+        .{ .color = .white, .action = .{ .place = .{ .F, ._1 } } },
+        .{ .color = .black, .action = .{ .place = .{ .G, ._10 } } },
+        .{ .color = .white, .action = .{ .place = .{ .A, ._4 } } },
+        .{ .color = .black, .action = .{ .place = .{ .J, ._8 } } },
+        .{ .color = .gold, .action = .{ .place = .{ .F, ._5 } } },
+        .{ .color = .white, .action = .{ .move = .{
             .horizontal = .{ .from_x = .A, .to_x = .B, .y = ._4 },
         } } },
-        .{ .by = .black, .action = .{ .move = .{
+        .{ .color = .black, .action = .{ .move = .{
             .horizontal = .{ .from_x = .J, .to_x = .C, .y = ._8 },
         } } },
-        .{ .by = .white, .action = .{ .move = .{
+        .{ .color = .white, .action = .{ .move = .{
             .diagonal = .{ .from = .bottom_left, .distance = 3 },
         } } },
-        .{ .by = .black, .action = .{ .move = .{
+        .{ .color = .black, .action = .{ .move = .{
             .vertical = .{ .x = .B, .from_y = ._10, .to_y = ._8 },
         } }, .winning = .job_in_one },
-        .{ .by = .white, .action = .{ .move = .{
+        .{ .color = .white, .action = .{ .move = .{
             .vertical = .{ .x = .F, .from_y = ._1, .to_y = ._4 },
         } } },
-        .{ .by = .black, .action = .{ .move = .{
+        .{ .color = .black, .action = .{ .move = .{
             .horizontal = .{ .from_x = .A, .to_x = .B, .y = ._8 },
         } }, .winning = .win },
     }, loaded_datafile.turns.items);

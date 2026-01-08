@@ -14,7 +14,7 @@ const Position = tackle.position.Position;
 const BlockSize = tackle.position.BlockSize;
 const getBlockWidth = tackle.position.getBlockWidth;
 const getBlockHeight = tackle.position.getBlockHeight;
-const Player = tackle.enums.Player;
+const PieceColor = tackle.enums.PieceColor;
 
 const CommentQuality = enum {
     very_good, // (!!)
@@ -51,49 +51,25 @@ pub const Action = union(enum) {
 };
 
 pub const Turn = struct {
-    by: Player,
+    color: PieceColor,
     action: Action,
     winning: ?CommentWinning = null,
     special_action: ?SpecialAction = null,
     quality: ?CommentQuality = null,
 
     pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
-        const with_format_options = TurnWithFormatOptions{
-            .turn = self,
-        };
-        try with_format_options.format(writer);
-    }
-
-    pub fn withFormatOptions(self: @This(), format_options: FormatOptions) TurnWithFormatOptions {
-        return TurnWithFormatOptions{
-            .turn = self,
-            .format_options = format_options,
-        };
-    }
-};
-
-pub const FormatOptions = struct {
-    write_player_color: bool = true,
-};
-
-pub const TurnWithFormatOptions = struct {
-    turn: Turn,
-    format_options: FormatOptions = .{},
-
-    pub fn format(self: @This(), writer: *std.io.Writer) std.io.Writer.Error!void {
         // Write player color
-        if (self.format_options.write_player_color) {
-            _ = try writer.write(switch (self.turn.by) {
-                .white => "w",
-                .black => "b",
-            });
-        }
+        _ = try writer.write(switch (self.color) {
+            .white => "w",
+            .black => "b",
+            .gold => "g",
+        });
 
         // Write move
-        _ = try self.turn.action.format(writer);
+        _ = try self.action.format(writer);
 
         // Write comment for winning state
-        if (self.turn.winning) |winning| {
+        if (self.winning) |winning| {
             _ = try writer.write(switch (winning) {
                 .job_in_one => "x",
                 .win => "xx",
@@ -101,14 +77,14 @@ pub const TurnWithFormatOptions = struct {
         }
 
         // Write special action
-        if (self.turn.special_action) |special_action| {
+        if (self.special_action) |special_action| {
             _ = try writer.write(switch (special_action) {
                 .gold_removed => "(>)",
                 .worm => "(w)",
             });
         }
         // Write comment for quality
-        if (self.turn.quality) |quality| {
+        if (self.quality) |quality| {
             _ = try writer.write(switch (quality) {
                 .very_good => "(!!)",
                 .good => "(!)",
@@ -120,17 +96,13 @@ pub const TurnWithFormatOptions = struct {
     }
 };
 
-pub fn parsePosition(reader: *std.io.Reader) !Position {
-    const column = try ColumnX.parse(reader);
-    const row = try RowY.parse(reader);
-    return .{ column, row };
-}
-
 /// Parse a turn in the standard notation from the given reader.
-/// The `color` parameter can be used to substitute for the w/b prefix
-/// in the notation.
-/// TODO: Add ability to parse a placement instead of a move.
-pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
+/// The `known_color` parameter can be used to substitute for the color prefix
+/// in the notation, which is mostly used for human text-based input,
+/// when the color is already known from the game state.
+/// In file parsing, this parameter should be null to ensure all lines
+/// can be parsed independently of each other.
+pub fn parseTurn(reader: *std.io.Reader, known_color: ?PieceColor) !Turn {
     const State = enum {
         start,
         color,
@@ -149,11 +121,11 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
         quality,
         done,
     };
-    var by: Player = undefined;
+    var color: PieceColor = undefined;
     var column_start: ColumnX = undefined;
     var row_start: RowY = undefined;
-    var column_end: ColumnX = undefined;
-    var row_end: RowY = undefined;
+    var column_end: ?ColumnX = null;
+    var row_end: ?RowY = null;
     var block_width: ?BlockSize = null;
     var block_height: ?BlockSize = null;
     var winning: ?CommentWinning = null;
@@ -162,23 +134,27 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
 
     parse: switch (State.start) {
         .start => {
-            if (color != null) {
-                by = color orelse unreachable;
+            if (known_color) |c| {
+                color = c;
                 continue :parse .block;
             }
             continue :parse .color;
         },
         .color => {
             const c = try reader.takeByte();
-            by = switch (c) {
+            color = switch (c) {
                 'w' => .white,
                 'b' => .black,
+                'g' => .gold,
                 else => return error.ColorInvalid,
             };
             continue :parse .block;
         },
         .block => {
-            try reader.fill(block_sigil.len);
+            reader.fill(block_sigil.len) catch |err| {
+                if (err == error.EndOfStream) continue :parse .letter_start;
+                return err;
+            };
             const s = try reader.peek(block_sigil.len);
             if (std.mem.eql(u8, s, block_sigil)) {
                 reader.toss(block_sigil.len);
@@ -212,7 +188,7 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
         },
         .second_number_start => {
             const row = RowY.parse(reader) catch |err| {
-                if (err == error.RowInvalid) {
+                if (err == error.RowInvalid or err == error.EndOfStream) {
                     // No second row means no block move
                     block_height = .no_block;
                     continue :parse .dash;
@@ -225,7 +201,10 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
             continue :parse .dash;
         },
         .dash => {
-            _ = try reader.takeDelimiter('-');
+            _ = reader.takeDelimiterInclusive('-') catch |err| {
+                if (err == error.EndOfStream) continue :parse .quality;
+                return err;
+            };
             continue :parse .letter_end;
         },
         .letter_end => {
@@ -240,7 +219,7 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
                     return err;
                 }
             };
-            if (@intFromEnum(column) <= @intFromEnum(column_start)) return error.SecondColumnSmallerThanFirst;
+            if (@intFromEnum(column) <= @intFromEnum(column_end.?)) return error.SecondColumnSmallerThanFirst;
             // block width was already determined when parsing the start letters
             continue :parse .number_end;
         },
@@ -258,7 +237,7 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
                     return err;
                 }
             };
-            if (@intFromEnum(row) <= @intFromEnum(row_end)) return error.SecondRowSmallerThanFirst;
+            if (@intFromEnum(row) <= @intFromEnum(row_end.?)) return error.SecondRowSmallerThanFirst;
             // block height was already determined when parsing the start numbers
             continue :parse .winning;
         },
@@ -320,12 +299,23 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
         .done => {},
     }
 
+    if (column_end == null and row_end == null) {
+        // It's a placement!
+        // We don't consider the case where only one of column_end or row_end is null,
+        // the parsing logic should prevent that from happening.
+        return Turn{
+            .color = color,
+            .action = .{ .place = .{ column_start, row_start } },
+            .quality = quality,
+        };
+    }
+
     var move: Move = undefined;
     if (row_start == row_end) {
         // Horizontal move
         move = .{ .horizontal = .{
             .from_x = column_start,
-            .to_x = column_end,
+            .to_x = column_end orelse unreachable,
             .y = row_start,
             .block_height = block_height orelse unreachable,
         } };
@@ -333,7 +323,7 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
         // Vertical move
         move = .{ .vertical = .{
             .from_y = row_start,
-            .to_y = row_end,
+            .to_y = row_end orelse unreachable,
             .x = column_start,
             .block_width = block_width orelse unreachable,
         } };
@@ -344,8 +334,8 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
             ._10 => if (column_start == .A) .top_left else .top_right,
             else => return error.RowTooShort,
         };
-        const distance_col = column_start.distance(column_end);
-        const distance_row = row_start.distance(row_end);
+        const distance_col = column_start.distance(column_end.?);
+        const distance_row = row_start.distance(row_end.?);
         if (distance_col != distance_row) return error.DiagonalMoveIllegal;
 
         move = .{ .diagonal = .{
@@ -356,7 +346,7 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
 
     // After parsing, construct the Turn object
     return Turn{
-        .by = by,
+        .color = color,
         .action = .{ .move = move },
         .winning = winning,
         .special_action = special_action,
@@ -366,7 +356,7 @@ pub fn parseTurn(reader: *std.io.Reader, color: ?Player) !Turn {
 
 test "format horizontal simple move" {
     const turn: Turn = .{
-        .by = .black,
+        .color = .black,
         .action = .{ .move = .{ .horizontal = .{
             .from_x = .F,
             .to_x = .C,
@@ -383,7 +373,7 @@ test "format horizontal simple move" {
 
 test "format horizontal block move" {
     const turn: Turn = .{
-        .by = .white,
+        .color = .white,
         .action = .{ .move = .{ .horizontal = .{
             .from_x = .A,
             .to_x = .C,
@@ -400,7 +390,7 @@ test "format horizontal block move" {
 
 test "format vertical simple move" {
     const turn: Turn = .{
-        .by = .black,
+        .color = .black,
         .action = .{ .move = .{ .vertical = .{
             .from_y = ._2,
             .to_y = ._5,
@@ -417,7 +407,7 @@ test "format vertical simple move" {
 
 test "format vertical block move" {
     const turn: Turn = .{
-        .by = .white,
+        .color = .white,
         .action = .{ .move = .{ .vertical = .{
             .from_y = ._10,
             .to_y = ._1,
@@ -434,7 +424,7 @@ test "format vertical block move" {
 
 test "format diagonal move 1" {
     const turn: Turn = .{
-        .by = .black,
+        .color = .black,
         .action = .{ .move = .{ .diagonal = .{
             .from = .bottom_left,
             .distance = 4,
@@ -485,7 +475,7 @@ test "format diagonal move 4" {
 
 test "format full move with comments" {
     const turn: Turn = .{
-        .by = .black,
+        .color = .black,
         .action = .{ .move = .{ .vertical = .{
             .from_y = ._1,
             .to_y = ._10,
@@ -505,7 +495,7 @@ test "format full move with comments" {
 
 test "format move resulting in maximum string length" {
     const turn: Turn = .{
-        .by = .white,
+        .color = .white,
         .action = .{ .move = .{ .horizontal = .{
             .from_x = .D,
             .to_x = .J,
@@ -529,11 +519,45 @@ test "format move resulting in maximum string length" {
     }
 }
 
+test "parse placement" {
+    var input = std.io.Reader.fixed("wA5");
+    const turn = try parseTurn(&input, null);
+    const expected: Turn = .{
+        .color = .white,
+        .action = .{ .place = .{ .A, ._5 } },
+    };
+
+    try std.testing.expectEqualDeep(expected, turn);
+}
+
+test "parse placement with no color prefix" {
+    var input = std.io.Reader.fixed("F1");
+    const turn = try parseTurn(&input, .black);
+    const expected: Turn = .{
+        .color = .black,
+        .action = .{ .place = .{ .F, ._1 } },
+    };
+
+    try std.testing.expectEqualDeep(expected, turn);
+}
+
+test "parse placement with quality comment" {
+    var input = std.io.Reader.fixed("bJ10(!!)");
+    const turn = try parseTurn(&input, null);
+    const expected: Turn = .{
+        .color = .black,
+        .action = .{ .place = .{ .J, ._10 } },
+        .quality = .very_good,
+    };
+
+    try std.testing.expectEqualDeep(expected, turn);
+}
+
 test "parse horizontal simple move" {
     var input = std.io.Reader.fixed("bH4-B4");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .black,
+        .color = .black,
         .action = .{ .move = .{ .horizontal = .{
             .from_x = .H,
             .to_x = .B,
@@ -549,7 +573,7 @@ test "parse horizontal block move" {
     var input = std.io.Reader.fixed("w▢D56-G56");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .white,
+        .color = .white,
         .action = .{ .move = .{ .horizontal = .{
             .from_x = .D,
             .to_x = .G,
@@ -565,7 +589,7 @@ test "parse vertical simple move" {
     var input = std.io.Reader.fixed("wC2-C5");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .white,
+        .color = .white,
         .action = .{ .move = .{ .vertical = .{
             .from_y = ._2,
             .to_y = ._5,
@@ -581,7 +605,7 @@ test "parse vertical block move" {
     var input = std.io.Reader.fixed("b▢EF10-EF1");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .black,
+        .color = .black,
         .action = .{ .move = .{ .vertical = .{
             .from_y = ._10,
             .to_y = ._1,
@@ -597,7 +621,7 @@ test "parse diagonal move 1" {
     var input = std.io.Reader.fixed("wA1-E5");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .white,
+        .color = .white,
         .action = .{ .move = .{ .diagonal = .{
             .from = .bottom_left,
             .distance = 4,
@@ -611,7 +635,7 @@ test "parse diagonal move 2" {
     var input = std.io.Reader.fixed("bJ10-G7");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .black,
+        .color = .black,
         .action = .{ .move = .{ .diagonal = .{
             .from = .top_right,
             .distance = 3,
@@ -625,7 +649,7 @@ test "parse diagonal move 3" {
     var input = std.io.Reader.fixed("wA10-F5");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .white,
+        .color = .white,
         .action = .{ .move = .{ .diagonal = .{
             .from = .top_left,
             .distance = 5,
@@ -639,7 +663,7 @@ test "parse diagonal move 4" {
     var input = std.io.Reader.fixed("bJ1-A10");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .black,
+        .color = .black,
         .action = .{ .move = .{ .diagonal = .{
             .from = .bottom_right,
             .distance = 9,
@@ -653,7 +677,7 @@ test "parse full move with comments" {
     var input = std.io.Reader.fixed("b▢EF1-EF10x(>)(!?)");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .black,
+        .color = .black,
         .action = .{ .move = .{ .vertical = .{
             .from_y = ._1,
             .to_y = ._10,
@@ -672,7 +696,7 @@ test "parse move only with quality comment" {
     var input = std.io.Reader.fixed("wA1-A2(!!)");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .white,
+        .color = .white,
         .action = .{ .move = .{ .vertical = .{
             .from_y = ._1,
             .to_y = ._2,
@@ -689,7 +713,7 @@ test "parse move only with special action comment" {
     var input = std.io.Reader.fixed("bJ10-J9(>)");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .black,
+        .color = .black,
         .action = .{ .move = .{ .vertical = .{
             .from_y = ._10,
             .to_y = ._9,
@@ -706,7 +730,7 @@ test "parse move only with winning comment" {
     var input = std.io.Reader.fixed("wC3-C4x");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .white,
+        .color = .white,
         .action = .{ .move = .{ .vertical = .{
             .from_y = ._3,
             .to_y = ._4,
@@ -723,7 +747,7 @@ test "parse move with maximum string length" {
     var input = std.io.Reader.fixed("w▢D810-J810xx(>)(!!)");
     const turn = try parseTurn(&input, null);
     const expected: Turn = .{
-        .by = .white,
+        .color = .white,
         .action = .{ .move = .{ .horizontal = .{
             .from_x = .D,
             .to_x = .J,

@@ -16,8 +16,11 @@ pub const text_ui = @import("text_ui.zig");
 
 pub const Position = position.Position;
 pub const Move = move.Move;
+pub const Action = notation.Action;
 pub const Turn = notation.Turn;
-pub const parsePosition = notation.parsePosition;
+pub const Player = enums.Player;
+pub const PieceColor = enums.PieceColor;
+pub const Phase = GameState.Phase;
 pub const parseTurn = notation.parseTurn;
 
 /// Place some demo pieces on the board to speed up testing.
@@ -35,23 +38,21 @@ pub fn placeDemoPieces(game_state: *GameState) !void {
 
     const datafile = try DataFile.load(allocator, &reader) orelse unreachable;
 
-    for (datafile.placements.items) |placement| {
-        try game_state.placeNextPiece(placement);
+    for (datafile.turns.items) |turn| {
+        try game_state.executeTurn(turn);
     }
 }
 
 /// Interface for callbacks to user input and output.
 /// Functions are currently forced to be known at compile time,
 /// but we may want to use function pointers in the future for more flexibility.
+/// TODO: Make this an intrusive interface like io.Writer
 pub const UserInterface = struct {
     /// Writer to write log messages to
     log_writer: *std.io.Writer,
 
-    /// Ask the user where the next piece should be placed.
-    getNextPlacement: fn () anyerror!Position,
-
-    /// Ask the user for the next move.
-    getNextMove: fn (state: GameState) anyerror!Move,
+    /// Ask the user to take the next action (piece placement or move)
+    getNextAction: fn (player: Player, phase: Phase) anyerror!Action,
 
     /// Record a turn taken by a player, for example to a `DataFile`.
     /// It is important that an implementation only records turns when this callback is called.
@@ -89,55 +90,31 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface, record_args: ?Recor
 
         const player = game_state.currentPlayer();
 
-        if (game_state.phase == .opening or game_state.phase == .place_gold) {
-            const pos = ui.getNextPlacement() catch |err| {
-                // When simulating games, we might run out of placements, even if the
-                // game is not finished yet. In that case, we just end the game.
-                if (err == error.NoMorePlacements) {
-                    try ui.log_writer.print("No more placements in simulation. Ending game.\n", .{});
-                    break;
-                }
-                try ui.log_writer.print("Error getting next placement: {}\n", .{err});
-                continue;
-            };
-
-            const x, const y = pos;
-            game_state.placeNextPiece(pos) catch |err| {
-                try ui.log_writer.print("Error placing piece at '{f}{f}': {}\n", .{ x, y, err });
-                continue;
-            };
-            if (ui.record) |record| {
-                record(
-                    record_args orelse unreachable,
-                    .{ .by = player, .action = .{ .place = pos } },
-                ) catch |err| {
-                    try ui.log_writer.print("Error recording placement action: {}\n", .{err});
-                };
-            }
-            continue;
-        }
-
-        const turn_move = ui.getNextMove(game_state) catch |err| {
-            // When simulating games, we might run out of moves, even if the
+        const action = ui.getNextAction(player, game_state.phase) catch |err| {
+            // When simulating games, we might run out of actions, even if the
             // game is not finished yet. In that case, we just end the game.
-            if (err == error.NoMoreMoves) {
-                try ui.log_writer.print("No more moves in simulation. Ending game.\n", .{});
+            if (err == error.NoMoreActions) {
+                try ui.log_writer.print("No more actions in simulation. Ending game.\n", .{});
                 break;
             }
-            try ui.log_writer.print("Error getting next move: {}\n", .{err});
+            try ui.log_writer.print("Error getting next action: {}\n", .{err});
             continue;
         };
 
-        game_state.executeMove(turn_move) catch |err| {
-            try ui.log_writer.print("Error executing move '{f}': {}\n", .{ turn_move, err });
+        const color = game_state.currentColor();
+        const turn = Turn{ .color = color, .action = action };
+
+        game_state.executeTurn(turn) catch |err| {
+            try ui.log_writer.print("Error executing action '{f}': {}\n", .{ action, err });
             continue;
         };
         if (ui.record) |record| {
             record(
                 record_args orelse unreachable,
-                .{ .by = player, .action = .{ .move = turn_move } },
+                // TODO: Record the actually executed turn with special actions and winning comment
+                turn,
             ) catch |err| {
-                try ui.log_writer.print("Error recording movement action: {}\n", .{err});
+                try ui.log_writer.print("Error recording turn '{f}': {}\n", .{ turn, err });
             };
         }
     }
@@ -154,29 +131,36 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface, record_args: ?Recor
 test "game loop runs without errors" {
     const init_state = GameState.init(Job.turm3());
 
-    const placements = [_]Position{
-        .{ .A, ._10 }, // White
-        .{ .B, ._1 }, // Black
-        .{ .J, ._9 }, // White
-        .{ .E, ._1 }, // Black
-        .{ .C, ._1 }, // White
-        .{ .J, ._8 }, // Black
-        .{ .J, ._6 }, // White
-        .{ .E, ._10 }, // Black
-        .{ .C, ._10 }, // White
-        .{ .A, ._8 }, // Black
-        .{ .D, ._5 }, // Gold
+    const actions = [_]Action{
+        .{ .place = .{ .A, ._10 } }, // White
+        .{ .place = .{ .B, ._1 } }, // Black
+        .{ .place = .{ .J, ._9 } }, // White
+        .{ .place = .{ .E, ._1 } }, // Black
+        .{ .place = .{ .C, ._1 } }, // White
+        .{ .place = .{ .J, ._8 } }, // Black
+        .{ .place = .{ .J, ._6 } }, // White
+        .{ .place = .{ .E, ._10 } }, // Black
+        .{ .place = .{ .C, ._10 } }, // White
+        .{ .place = .{ .A, ._8 } }, // Black
+        .{ .place = .{ .D, ._5 } }, // Gold
+        .{ .move = .{
+            .vertical = .{ .x = .C, .from_y = ._1, .to_y = ._6 },
+        } }, // White
+        .{ .move = .{
+            .horizontal = .{ .from_x = .J, .y = ._8, .to_x = .D },
+        } }, // Black
+        .{ .move = .{
+            .horizontal = .{ .from_x = .J, .y = ._6, .to_x = .D },
+        } }, // White
+        .{ .move = .{
+            .vertical = .{ .x = .E, .from_y = ._10, .to_y = ._8 },
+        } }, // Black
+        .{ .move = .{
+            .diagonal = .{ .from = .top_left, .distance = 4 },
+        } }, // White
     };
 
-    const moves = [_]Move{
-        .{ .vertical = .{ .x = .C, .from_y = ._1, .to_y = ._6 } }, // White
-        .{ .horizontal = .{ .from_x = .J, .y = ._8, .to_x = .D } }, // Black
-        .{ .horizontal = .{ .from_x = .J, .y = ._6, .to_x = .D } }, // White
-        .{ .vertical = .{ .x = .E, .from_y = ._10, .to_y = ._8 } }, // Black
-        .{ .diagonal = .{ .from = .top_left, .distance = 4 } }, // White
-    };
-
-    const mock_ui = testing.simulatedUserInterface(&placements, &moves);
+    const mock_ui = testing.simulatedUserInterface(&actions);
 
     const final_state = try runGameLoop(init_state, mock_ui, null);
 

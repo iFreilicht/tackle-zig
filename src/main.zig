@@ -212,7 +212,7 @@ test "mainArgs loads entire game and exits without errors when the game is alrea
         .working_dir = std.fs.cwd(),
     };
 
-    const ui = simulatedUserInterface(&.{}, &.{});
+    const ui = simulatedUserInterface(&.{});
 
     try mainArgs(allocator, args, ui);
 }
@@ -231,7 +231,7 @@ test "mainArgs starts a new game and exits without errors when no user input is 
         .working_dir = tmp_dir.dir,
     };
 
-    const ui = simulatedUserInterface(&.{}, &.{});
+    const ui = simulatedUserInterface(&.{});
 
     try mainArgs(allocator, args, ui);
 }
@@ -251,8 +251,7 @@ test "play -> play fails -> save -> play works" {
     };
 
     const ui = simulatedUserInterfaceWithRecording(
-        &.{.{ .A, ._5 }},
-        &.{},
+        &.{.{ .place = .{ .A, ._5 } }},
     );
 
     // First play creates the autosave

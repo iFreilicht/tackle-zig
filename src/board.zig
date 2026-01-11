@@ -13,6 +13,7 @@ const expectEqualSlices = std.testing.expectEqualSlices;
 const board_edge_length = tackle.constants.board_edge_length;
 const board_size = tackle.constants.board_size;
 const max_pieces_per_player = tackle.constants.max_pieces_per_player;
+const border_positions = tackle.position.border_positions;
 
 const Block = tackle.Block;
 const Move = tackle.Move;
@@ -124,6 +125,12 @@ pub fn removePiece(self: *Board, from: Position) !void {
     }
 
     self.squares[idx] = .empty;
+}
+
+/// Remove the gold piece from the board.
+pub fn removeGoldPiece(self: *Board) !void {
+    if (self.gold_piece == GOLD_EMPTY) return error.GoldPieceNotPlaced;
+    try self.removePiece(positionFromIndex(self.gold_piece));
 }
 
 /// Return a new Squares array with the piece moved from one index to another.
@@ -300,6 +307,10 @@ fn getMaxMoveList(self: Board, start: Position, direction: Direction, position_b
     };
 }
 
+pub fn hasGoldPiece(self: Board) bool {
+    return self.gold_piece != Board.GOLD_EMPTY;
+}
+
 pub fn getSquare(self: Board, at: Position) SquareContent {
     const idx = index(at);
     return self.squares[idx];
@@ -307,6 +318,13 @@ pub fn getSquare(self: Board, at: Position) SquareContent {
 
 pub fn isSquareEmpty(self: Board, at: Position) bool {
     return self.getSquare(at) == .empty;
+}
+
+pub fn isBorderEmpty(self: Board) bool {
+    for (border_positions) |pos| {
+        if (!self.isSquareEmpty(pos)) return false;
+    }
+    return true;
 }
 
 /// Place a piece at the specified position, checking for violations of game rules.
@@ -349,7 +367,10 @@ pub fn executePlacement(self: *Board, color: PieceColor, at: Position) !void {
 
 /// Move a piece according to the specified move, checking for
 /// violations of game rules.
-pub fn executeMove(self: *Board, player: Player, move: Move) !void {
+/// Returns the number of moved pieces. The minimum is 1.
+/// The absolute maximum is 21, because the biggest block is 3x4=12 and
+/// the biggest block it can push is 3x3=9, so 12+9=21.
+pub fn executeMove(self: *Board, player: Player, move: Move) !u5 {
     switch (move) {
         .diagonal => |d| {
             const start = d.start();
@@ -364,6 +385,7 @@ pub fn executeMove(self: *Board, player: Player, move: Move) !void {
 
             const end = d.end();
             try self.moveSinglePiece(start, end);
+            return 1;
         },
         inline .horizontal, .vertical => |m| {
             const start = m.start();
@@ -405,6 +427,7 @@ pub fn executeMove(self: *Board, player: Player, move: Move) !void {
             // TODO: Implement worm moves
 
             try self.moveManyPieces(start_positions_buffer[0..pos_index], direction, distance);
+            return @intCast(pos_index);
         },
     }
 }
@@ -1141,8 +1164,9 @@ test "execute move diagonally" {
         .from = .top_left,
         .distance = 3,
     } };
-    try board.executeMove(.white, move);
+    const num_pieces_moved = try board.executeMove(.white, move);
 
+    try expectEqual(1, num_pieces_moved);
     try expectContent(
         board,
         &.{.{ .D, ._7 }},
@@ -1191,8 +1215,9 @@ test "execute move horizontally with 2x3 block pushing 3 irregular pieces" {
         .y = ._5,
         .block_height = ._2,
     } };
-    try board.executeMove(.white, move);
+    const num_pieces_moved = try board.executeMove(.white, move);
 
+    try expectEqual(9, num_pieces_moved);
     try expectContent(
         board,
         &.{ .{ .E, ._5 }, .{ .E, ._6 }, .{ .F, ._5 }, .{ .F, ._6 }, .{ .G, ._5 }, .{ .G, ._6 } },
@@ -1263,7 +1288,7 @@ test "execute move vertically with 3x2 block pushing 2 irregular pieces" {
     try board.placePiece(.black, .{ .G, ._10 });
     try board.placePiece(.white, .{ .F, ._7 });
     try board.placePiece(.white, .{ .G, ._7 });
-    try board.placePiece(.white, .{ .F, ._6 });
+    try board.placePiece(.white, .{ .J, ._6 });
 
     const move = Move{ .vertical = .{
         .from_y = ._10,
@@ -1271,11 +1296,12 @@ test "execute move vertically with 3x2 block pushing 2 irregular pieces" {
         .x = .F,
         .block_width = ._2,
     } };
-    try board.executeMove(.black, move);
+    const num_pieces_moved = try board.executeMove(.black, move);
+    try expectEqual(8, num_pieces_moved);
 
     try expectContent(
         board,
-        &.{ .{ .F, ._2 }, .{ .F, ._1 }, .{ .G, ._2 } },
+        &.{ .{ .F, ._2 }, .{ .G, ._2 }, .{ .J, ._6 } },
         &.{ .{ .F, ._5 }, .{ .F, ._4 }, .{ .F, ._3 }, .{ .G, ._5 }, .{ .G, ._4 }, .{ .G, ._3 } },
         null,
     );

@@ -39,7 +39,8 @@ pub fn placeDemoPieces(game_state: *GameState) !void {
     const datafile = try DataFile.load(allocator, &reader) orelse unreachable;
 
     for (datafile.turns.items) |turn| {
-        try game_state.executeTurn(turn);
+        // We ignore the returned Turn here, there's no reason to modify the DataFile during setup.
+        _ = try game_state.executeTurn(turn);
     }
 }
 
@@ -102,19 +103,18 @@ pub fn runGameLoop(init_state: GameState, ui: UserInterface, record_args: ?Recor
         };
 
         const color = game_state.currentColor();
-        const turn = Turn{ .color = color, .action = action };
+        const input_turn = Turn{ .color = color, .action = action };
 
-        game_state.executeTurn(turn) catch |err| {
+        const executed_turn = game_state.executeTurn(input_turn) catch |err| {
             try ui.log_writer.print("Error executing action '{f}': {}\n", .{ action, err });
             continue;
         };
         if (ui.record) |record| {
             record(
                 record_args orelse unreachable,
-                // TODO: Record the actually executed turn with special actions and winning comment
-                turn,
+                executed_turn,
             ) catch |err| {
-                try ui.log_writer.print("Error recording turn '{f}': {}\n", .{ turn, err });
+                try ui.log_writer.print("Error recording turn '{f}': {}\n", .{ input_turn, err });
             };
         }
     }

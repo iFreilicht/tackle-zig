@@ -233,6 +233,17 @@ pub fn isInCore(position: Position) bool {
     return col_in_core and row_in_core;
 }
 
+pub const border_positions = [_]Position{
+    // Bottom row (without bottom right corner)
+    .{ .A, ._1 },  .{ .B, ._1 },  .{ .C, ._1 },  .{ .D, ._1 },  .{ .E, ._1 },  .{ .F, ._1 },  .{ .G, ._1 },  .{ .H, ._1 },  .{ .I, ._1 },
+    // Right column (without top right corner)
+    .{ .J, ._1 },  .{ .J, ._2 },  .{ .J, ._3 },  .{ .J, ._4 },  .{ .J, ._5 },  .{ .J, ._6 },  .{ .J, ._7 },  .{ .J, ._8 },  .{ .J, ._9 },
+    // Left column (without bottom left corner)
+    .{ .A, ._2 },  .{ .A, ._3 },  .{ .A, ._4 },  .{ .A, ._5 },  .{ .A, ._6 },  .{ .A, ._7 },  .{ .A, ._8 },  .{ .A, ._9 },  .{ .A, ._10 },
+    // Top row (without top left corner)
+    .{ .B, ._10 }, .{ .C, ._10 }, .{ .D, ._10 }, .{ .E, ._10 }, .{ .F, ._10 }, .{ .G, ._10 }, .{ .H, ._10 }, .{ .I, ._10 }, .{ .J, ._10 },
+};
+
 /// Size of a block perpendicular to the move direction (2-4, 0 means no block)
 /// Blocks can easily be longer than 4 in the move direction, but this is not represented
 /// in the notation anyway. 3 is the maximum because for a block of 4 to move perpendicularly

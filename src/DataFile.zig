@@ -142,7 +142,8 @@ pub fn toGameState(self: DataFile) !GameState {
     var game_state = GameState.init(self.job);
 
     for (self.turns.items) |turn| {
-        try game_state.executeTurn(turn);
+        // We ignore the canonical turn here! It would be confusing to modify
+        _ = try game_state.executeTurn(turn);
     }
 
     return game_state;

@@ -16,19 +16,19 @@ const getBlockWidth = tackle.position.getBlockWidth;
 const getBlockHeight = tackle.position.getBlockHeight;
 const PieceColor = tackle.enums.PieceColor;
 
-const CommentQuality = enum {
+pub const CommentQuality = enum {
     very_good, // (!!)
     good, // (!)
     interesting, // (!?)
     bad, // (?)
     very_bad, // (??)
 };
-const SpecialAction = enum {
+pub const SpecialAction = enum {
     // These can't happen in the same turn
     gold_removed, // (>)
     worm, // (w)
 };
-const CommentWinning = enum {
+pub const CommentWinning = enum {
     job_in_one, // x
     win, // xx
 };
@@ -53,6 +53,7 @@ pub const Action = union(enum) {
 pub const Turn = struct {
     color: PieceColor,
     action: Action,
+    is_block_move: bool = false,
     winning: ?CommentWinning = null,
     special_action: ?SpecialAction = null,
     quality: ?CommentQuality = null,
@@ -122,6 +123,7 @@ pub fn parseTurn(reader: *std.io.Reader, known_color: ?PieceColor) !Turn {
         done,
     };
     var color: PieceColor = undefined;
+    var is_block_move: bool = false;
     var column_start: ColumnX = undefined;
     var row_start: RowY = undefined;
     var column_end: ?ColumnX = null;
@@ -158,6 +160,7 @@ pub fn parseTurn(reader: *std.io.Reader, known_color: ?PieceColor) !Turn {
             const s = try reader.peek(block_sigil.len);
             if (std.mem.eql(u8, s, block_sigil)) {
                 reader.toss(block_sigil.len);
+                is_block_move = true;
                 // Block size is determined later. It's not an error if the move
                 // is a block move despite the block symbol missing from the input.
             }
@@ -179,6 +182,8 @@ pub fn parseTurn(reader: *std.io.Reader, known_color: ?PieceColor) !Turn {
             };
             if (@intFromEnum(column) <= @intFromEnum(column_start)) return error.SecondColumnSmallerThanFirst;
             block_width = getBlockWidth(column_start, column);
+            // Since there is a second column, it's definitely a block move, even if the block sigil was missing
+            is_block_move = true;
             continue :parse .number_start;
         },
         .number_start => {
@@ -198,6 +203,8 @@ pub fn parseTurn(reader: *std.io.Reader, known_color: ?PieceColor) !Turn {
             };
             if (@intFromEnum(row) <= @intFromEnum(row_start)) return error.SecondRowSmallerThanFirst;
             block_height = getBlockHeight(row_start, row);
+            // Since there is a second row, it's definitely a block move, even if the block sigil was missing
+            is_block_move = true;
             continue :parse .dash;
         },
         .dash => {
@@ -348,6 +355,7 @@ pub fn parseTurn(reader: *std.io.Reader, known_color: ?PieceColor) !Turn {
     return Turn{
         .color = color,
         .action = .{ .move = move },
+        .is_block_move = is_block_move,
         .winning = winning,
         .special_action = special_action,
         .quality = quality,
@@ -580,6 +588,7 @@ test "parse horizontal block move" {
             .y = ._5,
             .block_height = ._2,
         } } },
+        .is_block_move = true,
     };
 
     try std.testing.expectEqualDeep(expected, turn);
@@ -612,6 +621,7 @@ test "parse vertical block move" {
             .x = .E,
             .block_width = ._2,
         } } },
+        .is_block_move = true,
     };
 
     try std.testing.expectEqualDeep(expected, turn);
@@ -684,6 +694,7 @@ test "parse full move with comments" {
             .x = .E,
             .block_width = ._2,
         } } },
+        .is_block_move = true,
         .special_action = .gold_removed,
         .quality = .interesting,
         .winning = .job_in_one,
@@ -754,6 +765,7 @@ test "parse move with maximum string length" {
             .y = ._8,
             .block_height = ._3,
         } } },
+        .is_block_move = true,
         .special_action = .gold_removed,
         .quality = .very_good,
         .winning = .win,

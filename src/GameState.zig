@@ -15,6 +15,8 @@ const Player = tackle.enums.Player;
 const PieceColor = tackle.enums.PieceColor;
 const SquareContent = tackle.enums.SquareContent;
 
+const CommentWinning = tackle.notation.CommentWinning;
+const SpecialAction = tackle.notation.SpecialAction;
 const ColumnX = tackle.position.ColumnX;
 const RowY = tackle.position.RowY;
 const Position = tackle.position.Position;
@@ -64,7 +66,16 @@ pub fn currentColor(self: GameState) PieceColor {
     };
 }
 
-fn endTurn(self: *GameState) void {
+const TurnEndEvent = enum {
+    game_finished,
+    // TODO: Add job_in_one and a detection algorithm to find out if there's just one move left.
+    gold_removed,
+};
+
+/// End the players turn, updating the turn counter and phase
+/// and executing special actions.
+fn endTurn(self: *GameState) ?TurnEndEvent {
+    var end_event: ?TurnEndEvent = null;
     switch (self.phase) {
         .opening => {
             if (self.turn == self.job.piecesPerPlayer() * 2 - 1) {
@@ -83,46 +94,160 @@ fn endTurn(self: *GameState) void {
             const finished = self.job.isFulfilled(self.board, self.currentPlayer());
             if (finished) {
                 self.phase = .finished;
-                return;
+                return .game_finished;
+            }
+            if (self.board.hasGoldPiece() and self.board.isBorderEmpty()) {
+                self.board.removeGoldPiece() catch unreachable;
+                end_event = .gold_removed;
             }
             self.turn += 1;
         },
         .finished => unreachable,
     }
+    return end_event;
 }
 
 /// Execute a turn, checking for the correct turn order and phase.
-pub fn executeTurn(self: *GameState, turn: Turn) !void {
+/// Returns the executed turn, which might contain additional information
+/// about special actions or winning conditions!
+pub fn executeTurn(self: *GameState, turn: Turn) !Turn {
     if (turn.color != self.currentColor()) return error.NotCurrentColorTurn;
 
-    switch (turn.action) {
+    return switch (turn.action) {
         .place => |pos| try self.placeNextPiece(pos),
         .move => |move| try self.executeMove(move),
-    }
+    };
 }
 
 /// Place a piece for the current player and end their turn,
 /// checking for game rules.
-pub fn placeNextPiece(self: *GameState, at: Position) !void {
-    switch (self.phase) {
-        .opening => {
-            const color = PieceColor.fromPlayer(self.currentPlayer());
-            try self.board.executePlacement(color, at);
-        },
-        .place_gold => {
-            try self.board.executePlacement(.gold, at);
-        },
+/// Returns the executed turn.
+pub fn placeNextPiece(self: *GameState, at: Position) !Turn {
+    const color = switch (self.phase) {
+        .opening => PieceColor.fromPlayer(self.currentPlayer()),
+        .place_gold => .gold,
         .main, .finished => return error.InvalidPhase,
-    }
+    };
 
-    self.endTurn();
+    try self.board.executePlacement(color, at);
+
+    _ = self.endTurn();
+
+    return Turn{ .color = color, .action = .{ .place = at } };
 }
 
-/// Execute a move, checking for game rules and correct phase.
-pub fn executeMove(self: *GameState, move: Move) !void {
+/// Execute a move for the current player and end their turn,
+/// checking for game rules and correct phase.
+/// Returns the executed turn.
+pub fn executeMove(self: *GameState, move: Move) !Turn {
     if (self.phase != .main) return error.InvalidPhase;
 
-    try self.board.executeMove(self.currentPlayer(), move);
+    const player = self.currentPlayer();
+    const color = PieceColor.fromPlayer(player);
 
-    self.endTurn();
+    const num_pieces_moved = try self.board.executeMove(player, move);
+
+    const end_event = self.endTurn();
+
+    const is_block_move = num_pieces_moved > 1;
+    const winning: ?CommentWinning = if (end_event == .game_finished) .win else null;
+    const special_action: ?SpecialAction = if (end_event == .gold_removed) .gold_removed else null;
+
+    return Turn{
+        .color = color,
+        .action = .{ .move = move },
+        .is_block_move = is_block_move,
+        .winning = winning,
+        .special_action = special_action,
+    };
+}
+
+test "entire game works correctly and correct turns are returned" {
+    var game_state = GameState.init(Job.turm3());
+
+    const turn0 = try game_state.placeNextPiece(.{ .B, ._1 });
+    const turn1 = try game_state.placeNextPiece(.{ .D, ._10 });
+    // White places at A10
+    const turn2 = try game_state.executeTurn(Turn{
+        .color = .white,
+        .action = .{ .place = .{ .A, ._10 } },
+    });
+    _ = try game_state.placeNextPiece(.{ .F, ._1 });
+    _ = try game_state.placeNextPiece(.{ .C, ._10 });
+    _ = try game_state.placeNextPiece(.{ .J, ._5 });
+    _ = try game_state.placeNextPiece(.{ .A, ._8 });
+    _ = try game_state.placeNextPiece(.{ .F, ._10 });
+    _ = try game_state.placeNextPiece(.{ .G, ._10 });
+    _ = try game_state.placeNextPiece(.{ .A, ._4 });
+    // Color in turn is validated in executeTurn
+    const turn9_part2_fail = game_state.executeTurn(Turn{
+        .color = .black,
+        .action = .{ .place = .{ .F, ._5 } },
+    });
+    try expectError(error.NotCurrentColorTurn, turn9_part2_fail);
+
+    const turn9_part2 = try game_state.executeTurn(Turn{
+        .color = .gold,
+        .action = .{ .place = .{ .F, ._5 } },
+    });
+
+    const turn10 = try game_state.executeMove(.{ .vertical = .{ .x = .B, .from_y = ._1, .to_y = ._8 } });
+    _ = try game_state.executeMove(.{ .horizontal = .{ .from_x = .D, .to_x = .E, .y = ._10 } });
+    _ = try game_state.executeMove(.{ .horizontal = .{ .from_x = .A, .to_x = .I, .y = ._8 } });
+    _ = try game_state.executeMove(.{ .horizontal = .{ .from_x = .E, .to_x = .H, .y = ._10 } });
+    const turn14 = try game_state.executeTurn(.{
+        .color = .white,
+        .action = .{ .move = .{ .horizontal = .{ .from_x = .J, .to_x = .F, .y = ._8 } } },
+    });
+    _ = try game_state.executeMove(.{ .vertical = .{ .x = .I, .from_y = ._10, .to_y = ._5 } });
+    _ = try game_state.executeMove(.{ .diagonal = .{ .from = .top_right, .distance = 2 } });
+    const turn17 = try game_state.executeMove(.{ .horizontal = .{ .from_x = .J, .to_x = .I, .y = ._5 } });
+    const final_turn = try game_state.executeMove(.{ .horizontal = .{ .from_x = .E, .to_x = .F, .y = ._8 } });
+
+    try expectEqual(.finished, game_state.phase);
+    try expectEqual(18, game_state.turn);
+
+    try expectEqualDeep(Turn{
+        .color = .white,
+        .action = .{ .place = .{ .B, ._1 } },
+    }, turn0);
+
+    try expectEqualDeep(Turn{
+        .color = .black,
+        .action = .{ .place = .{ .D, ._10 } },
+    }, turn1);
+
+    try expectEqualDeep(Turn{
+        .color = .white,
+        .action = .{ .place = .{ .A, ._10 } },
+    }, turn2);
+
+    try expectEqualDeep(Turn{
+        .color = .gold,
+        .action = .{ .place = .{ .F, ._5 } },
+    }, turn9_part2);
+
+    try expectEqualDeep(Turn{
+        .color = .white,
+        .action = .{ .move = .{ .vertical = .{ .x = .B, .from_y = ._1, .to_y = ._8 } } },
+    }, turn10);
+
+    try expectEqualDeep(Turn{
+        .color = .white,
+        .action = .{ .move = .{ .horizontal = .{ .from_x = .J, .to_x = .F, .y = ._8 } } },
+        .is_block_move = true,
+    }, turn14);
+
+    try expectEqualDeep(Turn{
+        .color = .black,
+        .action = .{ .move = .{ .horizontal = .{ .from_x = .J, .to_x = .I, .y = ._5 } } },
+        .is_block_move = true,
+    }, turn17);
+
+    try expectEqualDeep(Turn{
+        .color = .white,
+        .action = .{ .move = .{ .horizontal = .{ .from_x = .E, .to_x = .F, .y = ._8 } } },
+        .is_block_move = true,
+        .winning = .win,
+    }, final_turn);
 }

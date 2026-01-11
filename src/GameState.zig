@@ -251,3 +251,43 @@ test "entire game works correctly and correct turns are returned" {
         .winning = .win,
     }, final_turn);
 }
+
+test "gold piece is removed when appropriate" {
+    var board = Board{};
+    // Place 11 pieces at random, only two pieces should be on the border
+    try board.placePiece(.white, .{ .B, ._10 });
+    try board.placePiece(.black, .{ .J, ._1 });
+    try board.placePiece(.white, .{ .B, ._4 });
+    try board.placePiece(.black, .{ .E, ._6 });
+    try board.placePiece(.white, .{ .F, ._3 });
+    try board.placePiece(.black, .{ .H, ._4 });
+    try board.placePiece(.white, .{ .C, ._7 });
+    try board.placePiece(.black, .{ .D, ._8 });
+    try board.placePiece(.white, .{ .G, ._2 });
+    try board.placePiece(.black, .{ .I, ._9 });
+    // Gold piece in the core, as usual
+    try board.placePiece(.gold, .{ .F, ._5 });
+
+    var game_state = GameState{
+        .turn = 22,
+        .phase = .main,
+        .board = board,
+        .job = Job.turm4(),
+    };
+
+    // Move white piece from border to court
+    const turn23 = try game_state.executeMove(.{ .vertical = .{ .x = .B, .from_y = ._10, .to_y = ._5 } });
+    // Move black piece from border to court, this should remove the gold piece
+    const turn24 = try game_state.executeMove(.{ .diagonal = .{ .from = .bottom_right, .distance = 1 } });
+
+    try expectEqual(false, game_state.board.hasGoldPiece());
+    try expectEqualDeep(Turn{
+        .color = .white,
+        .action = .{ .move = .{ .vertical = .{ .x = .B, .from_y = ._10, .to_y = ._5 } } },
+    }, turn23);
+    try expectEqualDeep(Turn{
+        .color = .black,
+        .action = .{ .move = .{ .diagonal = .{ .from = .bottom_right, .distance = 1 } } },
+        .special_action = .gold_removed,
+    }, turn24);
+}

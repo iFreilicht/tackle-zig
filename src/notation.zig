@@ -188,7 +188,10 @@ pub fn parseTurn(reader: *std.io.Reader, known_color: ?PieceColor) !Turn {
         },
         .number_start => {
             row_start = try RowY.parse(reader);
-            if (row_start == ._10) continue :parse .dash;
+            if (row_start == ._10) {
+                block_height = .no_block;
+                continue :parse .dash;
+            }
             continue :parse .second_number_start;
         },
         .second_number_start => {
@@ -570,6 +573,22 @@ test "parse horizontal simple move" {
             .from_x = .H,
             .to_x = .B,
             .y = ._4,
+            .block_height = .no_block,
+        } } },
+    };
+
+    try std.testing.expectEqualDeep(expected, turn);
+}
+
+test "parse horizontal move in top row" {
+    var input = std.io.Reader.fixed("wB10-E10");
+    const turn = try parseTurn(&input, null);
+    const expected: Turn = .{
+        .color = .white,
+        .action = .{ .move = .{ .horizontal = .{
+            .from_x = .B,
+            .to_x = .E,
+            .y = ._10,
             .block_height = .no_block,
         } } },
     };

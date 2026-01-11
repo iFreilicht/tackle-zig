@@ -19,7 +19,7 @@ This project has the goal of implementing the board game "Tackle" (http://tackle
 - ✓ Support for all official jobs
 - ✓ Support for custom jobs
 - ✓ Detection of job completion
-- ⏳ Automatic removal of gold piece
+- ✓ Automatic removal of gold piece
 - ⏳ Worm moves
 - ⏳ Allow bypassing the rule that gold has to be placed in the court
 
@@ -36,8 +36,8 @@ None of these limitations matter for games that adhere to the official rules. Th
 - ✓ Textual input of the moves in notation form
 - ✓ Play a full game of Tackle
 - ⏳ Undo functionality
-- ⏳ Saving and loading games
-- ⏳ Selecting a job from the list of official jobs 
+- ✓ Saving and loading games
+- ✓ Selecting a job from the list of official jobs 
 - ⏳ Playing against an AI opponent
 
 ### MCTS-Algorithm

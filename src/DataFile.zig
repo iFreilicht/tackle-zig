@@ -26,6 +26,7 @@ const Player = tackle.enums.Player;
 const Position = tackle.position.Position;
 const notation = tackle.notation;
 const Turn = tackle.Turn;
+const CommentWinning = tackle.notation.CommentWinning;
 
 const comment_prefix = "# ";
 
@@ -134,6 +135,7 @@ pub fn save(self: DataFile, writer: *std.io.Writer) !void {
             break;
         }
     }
+    try writer.flush();
 }
 
 /// Play back the DataFile into an empty GameState initialized with the DataFile's job.
@@ -142,11 +144,43 @@ pub fn toGameState(self: DataFile) !GameState {
     var game_state = GameState.init(self.job);
 
     for (self.turns.items) |turn| {
-        // We ignore the canonical turn here! It would be confusing to modify
+        // We ignore the canonical turn here! It would be confusing to modify the DataFile
+        // in a function that is expected to only do a conversion. See `canonicalize` below.
         _ = try game_state.executeTurn(turn);
     }
 
     return game_state;
+}
+
+/// Play back the DataFile into an empty GameState initialized with the DataFile's job.
+/// Similar to `toGameState`, but will modify the DataFile to be in canonical form, meaning that
+/// special events (winning, block-move, gold removed) are recorded correctly.
+/// This is useful because user-edited DataFiles may be missing these annotations.
+pub fn canonicalize(self: *DataFile) !void {
+    var game_state = GameState.init(self.job);
+
+    for (0..self.turns.items.len) |i| {
+        const original_turn = self.turns.items[i];
+        const executed_turn = try game_state.executeTurn(original_turn);
+
+        // We currently can't detect job_in_one, so if the canonical turn's winning comment is empty,
+        // we just keep whatever was in the datafile originally.
+        const winning: ?CommentWinning = if (executed_turn.winning) |detected_win_comment|
+            detected_win_comment
+        else
+            original_turn.winning;
+
+        const new_turn = Turn{
+            .color = executed_turn.color,
+            .action = executed_turn.action,
+            .is_block_move = executed_turn.is_block_move,
+            .winning = winning,
+            .special_action = executed_turn.special_action,
+            // We will not modify quality comments, these are subjective.
+            .quality = original_turn.quality,
+        };
+        self.turns.items[i] = new_turn;
+    }
 }
 
 test "load data file correctly" {
@@ -188,7 +222,7 @@ test "load data file correctly" {
         } } },
         .{ .color = .black, .action = .{ .move = .{
             .horizontal = .{ .from_x = .A, .to_x = .B, .y = ._8 },
-        } }, .winning = .win },
+        } }, .is_block_move = true, .winning = .win },
     }, loaded_datafile.turns.items);
 
     try expectEqualDeep("This is a comment", loaded_datafile.comments.get(1).?.items);
@@ -244,4 +278,25 @@ test "convert to GameState correctly" {
         &.{ .{ .B, ._1 }, .{ .B, ._8 }, .{ .C, ._8 }, .{ .D, ._8 }, .{ .G, ._10 } },
         .{ .F, ._5 },
     );
+}
+
+test "canonicalize without overwriting user comments" {
+    const allocator = std.testing.allocator;
+
+    const datafile = @embedFile("test_data/turm3_testgame2_user_edited.txt");
+    var reader = std.io.Reader.fixed(datafile);
+
+    var loaded_datafile = try DataFile.load(allocator, &reader) orelse unreachable;
+    defer loaded_datafile.deinit(allocator);
+
+    try loaded_datafile.canonicalize();
+
+    var buffer: [1024]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+
+    try loaded_datafile.save(&writer);
+
+    const expected_canonical_datafile = @embedFile("test_data/turm3_testgame2_user_edited_formatted.txt");
+
+    try expectEqualDeep(expected_canonical_datafile, writer.buffered());
 }

@@ -19,6 +19,7 @@ const Mode = enum {
     show,
     discard,
     save,
+    format,
 };
 
 const autosave_filename = ".tackle-autosave.txt";
@@ -40,6 +41,7 @@ const Args = struct {
         \\       tackle show [file]         Display a saved game and exit
         \\       tackle discard             Discard the current autosave
         \\       tackle save [file]         Save the autosaved game to [file]
+        \\       tackle format [file]       Read [file], simulate all moves and write back the canonical format
         \\
     ;
 
@@ -67,6 +69,8 @@ const Args = struct {
                 mode = .discard;
             } else if (std.mem.eql(u8, arg, "save")) {
                 mode = .save;
+            } else if (std.mem.eql(u8, arg, "format")) {
+                mode = .format;
             } else {
                 if (mode == .play) parse_job: {
                     job = Job.fromName(arg) catch {
@@ -107,6 +111,7 @@ pub fn main() !void {
         if (parsed_args.verbose) {
             return err;
         }
+        std.process.exit(1);
     };
 }
 
@@ -137,6 +142,8 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
 
     var read_buffer: [1024]u8 = undefined;
     var reader = file.reader(&read_buffer);
+    var write_buffer: [1024]u8 = undefined;
+    var writer = file.writer(&write_buffer);
 
     var datafile = try DataFile.load(gpa, &reader.interface);
     defer if (datafile != null) datafile.?.deinit(gpa);
@@ -173,6 +180,13 @@ pub fn mainArgs(gpa: std.mem.Allocator, args: Args, ui: UserInterface) !void {
                 return error.SavedGameAlreadyExists;
             }
         }
+    }
+
+    if (args.mode == .format) {
+        try datafile.?.canonicalize();
+        try datafile.?.save(&writer.interface);
+        try ui.log_writer.print("File \"{s}\" reformatted to canonical form.\n", .{filename});
+        return;
     }
 
     const state = try datafile.?.toGameState();

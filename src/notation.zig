@@ -66,6 +66,23 @@ pub const Turn = struct {
             .gold => "g",
         });
 
+        // Write block sigil if it's a block move with a breadth of 1
+        if (self.is_block_move) {
+            switch (self.action) {
+                .move => |mv| {
+                    switch (mv) {
+                        .diagonal => {},
+                        inline else => |m| {
+                            if (!m.isBlock()) {
+                                _ = try writer.write(block_sigil);
+                            }
+                        },
+                    }
+                },
+                else => {},
+            }
+        }
+
         // Write move
         _ = try self.action.format(writer);
 
@@ -391,12 +408,31 @@ test "format horizontal block move" {
             .y = ._5,
             .block_height = ._2,
         } } },
+        .is_block_move = true,
     };
 
     var buffer: [11]u8 = undefined;
     var writer = std.io.Writer.fixed(&buffer);
     _ = try writer.print("{f}", .{turn});
     try std.testing.expectEqualStrings("w▢A56-C56", &buffer);
+}
+
+test "format horizontal block move with height of 1" {
+    const turn: Turn = .{
+        .color = .black,
+        .action = .{ .move = .{ .horizontal = .{
+            .from_x = .H,
+            .to_x = .E,
+            .y = ._2,
+            .block_height = .no_block,
+        } } },
+        .is_block_move = true,
+    };
+
+    var buffer: [9]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{turn});
+    try std.testing.expectEqualStrings("b▢H2-E2", &buffer);
 }
 
 test "format vertical simple move" {
@@ -431,6 +467,24 @@ test "format vertical block move" {
     var writer = std.io.Writer.fixed(&buffer);
     _ = try writer.print("{f}", .{turn});
     try std.testing.expectEqualStrings("w▢DF10-DF1", &buffer);
+}
+
+test "format vertical block move with width of 1" {
+    const turn: Turn = .{
+        .color = .black,
+        .action = .{ .move = .{ .vertical = .{
+            .from_y = ._3,
+            .to_y = ._7,
+            .x = .E,
+            .block_width = .no_block,
+        } } },
+        .is_block_move = true,
+    };
+
+    var buffer: [9]u8 = undefined;
+    var writer = std.io.Writer.fixed(&buffer);
+    _ = try writer.print("{f}", .{turn});
+    try std.testing.expectEqualStrings("b▢E3-E7", &buffer);
 }
 
 test "format diagonal move 1" {

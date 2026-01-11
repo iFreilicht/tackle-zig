@@ -24,7 +24,6 @@ pub fn record(record_args: RecordArgs, turn: Turn) !void {
     var write_buffer: [1024]u8 = undefined;
     var datafile_writer = record_args.file_ptr.writer(&write_buffer);
     try datafile_ptr.save(&datafile_writer.interface);
-    try datafile_writer.interface.flush();
 }
 
 pub fn textBasedUI() UserInterface {

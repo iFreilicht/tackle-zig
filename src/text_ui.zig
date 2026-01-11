@@ -48,6 +48,7 @@ pub fn textBasedUI() UserInterface {
         fn getNextAction(player: Player, phase: Phase) !Action {
             while (true) {
                 try log_writer.print("Enter next action:\n", .{});
+                try log_writer.flush();
 
                 var slice: ?[]const u8 = null;
                 while (slice == null) {
